@@ -1,137 +1,107 @@
-const particles = new Float32Array(240 * 3);
 
-for (let i = 0; i < 240; i++) {
- const angle = Math.random() * Math.PI * 2;
- const radius = 0.5 + Math.random() * 0.7;
-
- particles[i * 3] = Math.cos(angle) * radius;
- particles[i * 3 + 1] = Math.random() * 2.8;
- particles[i * 3 + 2] = Math.sin(angle) * radius;
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kumar Studio</title>
+<style>
+body{margin:0;background:#151922;color:white;font-family:Arial}
+header{padding:15px;color:gold}
+#view{height:65vh;touch-action:none}
+#panel{text-align:center;padding:10px}
+button{padding:12px;margin:4px;background:#303744;color:white;border:1px solid gold;border-radius:8px}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<header>KUMAR STUDIO - V3</header>
+<div id="view"></div>
+<div id="panel">
+<button id="idle">Idle</button>
+<button id="walk">Walk</button>
+<button id="run">Run</button>
+<button id="left">Left</button>
+<button id="right">Right</button>
+<button id="import">Import Human</button>
+<input type="file" id="file" accept=".glb" hidden>
+<p id="status">Loading human...</p>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+const view=document.getElementById('view');
+const status=document.getElementById('status');
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x151922);
+const camera=new THREE.PerspectiveCamera(40,1,0.1,100);
+camera.position.set(3,2,4);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+view.appendChild(renderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0,1,0);
+controls.enableDamping=true;
+scene.add(new THREE.HemisphereLight(0xffffff,0x555555,2));
+const light=new THREE.DirectionalLight(0xffe6bd,3);
+light.position.set(3,5,4);
+scene.add(light);
+scene.add(new THREE.GridHelper(30,30));
+const loader=new GLTFLoader();
+let model,mixer,clips=[],action;
+function load(g){
+if(mixer)mixer.stopAllAction();
+if(model)scene.remove(model);
+model=g.scene;
+action=null;
+const box=new THREE.Box3().setFromObject(model);
+model.scale.multiplyScalar(1.8/Math.max(box.getSize(new THREE.Vector3()).y,0.001));
+box.setFromObject(model);
+const center=box.getCenter(new THREE.Vector3());
+model.position.sub(new THREE.Vector3(center.x,box.min.y,center.z));
+scene.add(model);
+mixer=new THREE.AnimationMixer(model);
+clips=g.animations;
+status.textContent='Human loaded: '+clips.length+' animations';
+play('idle');
 }
-
-const particleGeometry = new THREE.BufferGeometry();
-
-particleGeometry.setAttribute(
- 'position',
- new THREE.BufferAttribute(particles, 3)
-);
-
-aura.add(new THREE.Points(
- particleGeometry,
- new THREE.PointsMaterial({
- color: 0xffca55,
- size: 0.035,
- transparent: true,
- opacity: 0.8,
- blending: THREE.AdditiveBlending,
- depthWrite: false
- })
-));
-
-document.getElementById('aura').onclick = () => {
- aura.visible = !aura.visible;
-};
-
-document.getElementById('grid').onclick = () => {
- grid.visible = !grid.visible;
-};
-
-document.getElementById('reset').onclick = () => {
-
- stop();
-
- hero.position.set(0, 0, 0);
- hero.rotation.set(0, 0, 0);
-
- camera.position.set(3.5, 2.5, 5);
- controls.target.set(0, 1.2, 0);
-};
-
-function resize() {
-
- renderer.setSize(
- view.clientWidth,
- view.clientHeight
- );
-
- camera.aspect =
- view.clientWidth / Math.max(view.clientHeight, 1);
-
- camera.updateProjectionMatrix();
+function play(name){
+const clip=clips.find(c=>c.name.toLowerCase().includes(name));
+if(!clip){status.textContent='Animation unavailable: '+name;return;}
+const next=mixer.clipAction(clip);
+if(action===next)return;
+next.reset().play();
+if(action)action.crossFadeTo(next,0.3,false);
+action=next;
+status.textContent='Playing: '+name;
 }
-
-window.addEventListener('resize', resize);
+loader.load('https://threejs.org/examples/models/gltf/Soldier.glb',load,undefined,()=>status.textContent='Loading failed. Import a GLB file.');
+for(const name of ['idle','walk','run']){
+document.getElementById(name).onclick=()=>play(name);
+}
+document.getElementById('left').onclick=()=>{if(model)model.rotation.y-=0.5};
+document.getElementById('right').onclick=()=>{if(model)model.rotation.y+=0.5};
+const file=document.getElementById('file');
+document.getElementById('import').onclick=()=>file.click();
+file.onchange=async()=>{
+if(file.files[0])loader.parse(await file.files[0].arrayBuffer(),'',load,()=>status.textContent='Import failed');
+};
+function resize(){
+renderer.setSize(view.clientWidth,view.clientHeight);
+camera.aspect=view.clientWidth/view.clientHeight;
+camera.updateProjectionMatrix();
+}
+window.addEventListener('resize',resize);
 resize();
-
-const clock = new THREE.Clock();
-
-function animate() {
-
- requestAnimationFrame(animate);
-
- const dt = Math.min(clock.getDelta(), 0.05);
-
- if (mixer) {
- mixer.timeScale = Number(
- document.getElementById('motion').value
- );
- mixer.update(dt);
- }
-
- if (direction && model) {
-
- const speed = Number(
- document.getElementById('speed').value
- ) * (running ? 2 : 1);
-
- const dx = direction[0] * speed * dt;
- const dz = direction[1] * speed * dt;
-
- const target = Math.atan2(
- direction[0], direction[1]
- );
-
- const difference = Math.atan2(
- Math.sin(target - hero.rotation.y),
- Math.cos(target - hero.rotation.y)
- );
-
- hero.rotation.y += difference *
- Math.min(1, dt * 8);
-
- hero.position.x += dx;
- hero.position.z += dz;
-
- camera.position.x += dx;
- camera.position.z += dz;
-
- controls.target.x += dx;
- controls.target.z += dz;
- }
-
- if (aura.visible) {
-
- aura.rotation.y += dt;
-
- const p = particleGeometry.attributes.position;
-
- for (let i = 0; i < p.count; i++) {
- p.array[i * 3 + 1] += dt * 0.5;
-
- if (p.array[i * 3 + 1] > 2.8) {
- p.array[i * 3 + 1] = 0;
- }
- }
-
- p.needsUpdate = true;
- }
-
- controls.update();
- renderer.render(scene, camera);
-}
-
-animate();
-
+const clock=new THREE.Clock();
+renderer.setAnimationLoop(()=>{
+const dt=Math.min(clock.getDelta(),0.05);
+if(mixer)mixer.update(dt);
+controls.update();
+renderer.render(scene,camera);
+});
 </script>
 </body>
 </html>
