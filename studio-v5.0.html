@@ -2875,6 +2875,45 @@ sync410();
 document.title="Kumar Studio V5.0";
 
 
+
+const calibrationPanel=document.createElement("details");
+calibrationPanel.open=true;
+calibrationPanel.innerHTML="<summary>Left Index Calibration</summary>";
+anatomyPanel.parentElement.appendChild(calibrationPanel);
+const calibrationStatus=document.createElement("p");
+calibrationStatus.textContent="Build skeleton, then test left index.";
+calibrationPanel.appendChild(calibrationStatus);
+const calibrationAngles=[0,0,0];
+let calibrationSign=1;
+function calibrateIndex(){
+ if(!posed||restRig!==posed){calibrationStatus.textContent="Build skeleton first";return;}
+ stop410();
+ const frame=handFrame("L");
+ if(!frame)return;
+ const axis=fingerAxis("L",2,frame);
+ if(!axis)return;
+ for(let j=1;j<=3;j++){
+ const b=getBone(fingerName("L",2,j));
+ if(!b)continue;
+ b.quaternion.setFromAxisAngle(axis,THREE.MathUtils.degToRad(calibrationAngles[j-1]*calibrationSign));
+ }
+ posed.updateMatrixWorld(true);syncJoint();
+ calibrationStatus.textContent="Left index: "+calibrationAngles.join(" / ")+" degrees; direction "+calibrationSign;
+}
+const calibrationInputs=[];
+for(let j=0;j<3;j++){
+ const label=document.createElement("label");
+ label.textContent=["MCP","PIP","DIP"][j];
+ const input=document.createElement("input");
+ input.type="range";input.min=0;input.max=[85,100,70][j];input.value=0;input.style.width="100%";
+ input.oninput=()=>{calibrationAngles[j]=Number(input.value);calibrateIndex();};
+ calibrationPanel.appendChild(label);calibrationPanel.appendChild(input);calibrationInputs.push(input);
+}
+function calibrationButton(name,fn){const b=document.createElement("button");b.textContent=name;b.onclick=fn;calibrationPanel.appendChild(b);}
+calibrationButton("Reverse bend direction",()=>{calibrationSign*=-1;calibrateIndex();});
+calibrationButton("Test index curl",()=>{[75,95,60].forEach((v,i)=>{calibrationAngles[i]=v;calibrationInputs[i].value=v;});calibrateIndex();});
+calibrationButton("Reset index",()=>{calibrationAngles.fill(0);calibrationInputs.forEach(i=>i.value=0);calibrateIndex();});
+
 renderer.setAnimationLoop(()=>{
 if(posed&&rigGeneration!==generation)clearRig();
 controls.update();
