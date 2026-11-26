@@ -1232,19 +1232,13 @@ return rest.get(b).clone()
 }
 
 function forward(){
-
-const d=direction('foot.L','toe2-1.L');
-
-if(d){
-
-d.y=0;
-
-if(d.lengthSq()>0.000001)
-return d.normalize();
-
-}
-
-return new THREE.Vector3(0,0,1);
+ const left=direction('foot.L','toe2-1.L');
+ const right=direction('foot.R','toe2-1.R');
+ const heading=new THREE.Vector3();
+ if(left)heading.add(left);
+ if(right)heading.add(right);
+ heading.y=0;
+ return heading.lengthSq()>1e-8?heading.normalize():heading.set(0,0,1);
 }
 
 function aimCurrent(name,next,target,strength=1){
@@ -1262,18 +1256,39 @@ function armDirection(side){
  posed.updateMatrixWorld(true);
  return a&&b?b.getWorldPosition(new THREE.Vector3()).sub(a.getWorldPosition(new THREE.Vector3())).normalize():new THREE.Vector3(0,-1,0);
 }
+// MakeHuman's browser rig uses identity local rotations at bind time. Aim
+// from that reference so repeated slider edits cannot accumulate axial twist.
+function aimArmFromBind(name,next,target){
+ const bone=getBone(name),segment=direction(name,next);
+ if(!bone?.parent||!segment)return;
+ const parentInverse=bone.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+ bone.quaternion.setFromUnitVectors(segment,target.clone().normalize().applyQuaternion(parentInverse));
+ posed.updateMatrixWorld(true);
+}
+
+function shoulderTarget(side,v){
+ const f=forward(),angle=THREE.MathUtils.degToRad(v);
+ const across=direction('upperarm01.R','upperarm01.L');
+ if(across){
+  across.y=0;
+  across.addScaledVector(f,-across.dot(f)).normalize();
+ }
+ const target=new THREE.Vector3(0,-Math.cos(angle),0).addScaledVector(f,Math.sin(angle)+.045);
+ if(across)target.addScaledVector(across,side==='L'?.12:-.12);
+ return target.normalize();
+}
+
 function elbowAngle(side,v){
+ if(!posed||restRig!==posed)return;
  const d=armDirection(side),f=forward();
  const axis=new THREE.Vector3().crossVectors(d,f);
  if(axis.lengthSq()<1e-8)axis.crossVectors(d,new THREE.Vector3(0,1,0));
  if(axis.lengthSq()>1e-8)d.applyAxisAngle(axis.normalize(),THREE.MathUtils.degToRad(v));
- aimCurrent('lowerarm01.'+side,'wrist.'+side,d);
+ aimArmFromBind('lowerarm01.'+side,'wrist.'+side,d);
 }
 function shoulderAngle(side,v){
- const f=forward(),d=new THREE.Vector3(0,-1,0);
- const axis=new THREE.Vector3().crossVectors(d,f).normalize();
- d.applyAxisAngle(axis,THREE.MathUtils.degToRad(v));
- aimCurrent('upperarm01.'+side,'lowerarm01.'+side,d);
+ if(!posed||restRig!==posed)return;
+ aimArmFromBind('upperarm01.'+side,'lowerarm01.'+side,shoulderTarget(side,v));
 }
 function neutralArms(){if(!posed)return;for(const side of ['L','R']){shoulderAngle(side,0);elbowAngle(side,0);}syncJoint();}
 function bend(name,next,value,target){
@@ -3042,9 +3057,49 @@ function motionCapture(){
  if(!posed||restRig!==posed)return false;
  if(testSnapshot)finishHandTests();
  stop410();
- if(!motionBase||motionBase.rig!==posed)motionBase={rig:posed,q:bones.map(b=>b.quaternion.clone()),p:bones.map(b=>b.position.clone())};
+ if(!motionBase||motionBase.rig!==posed){
+  posed.updateMatrixWorld(true);
+  motionBase={rig:posed,q:bones.map(b=>b.quaternion.clone()),p:bones.map(b=>b.position.clone()),
+   ankles:Object.fromEntries(['L','R'].map(side=>[side,captureWorld(getBone('foot.'+side))]))};
+ }
  return true;
 }
+
+function groundedWalk(t,steps,f,stride,bob){
+ const progress=t*steps;
+ const legLength=rest.get('upperleg01.L').distanceTo(rest.get('lowerleg01.L'))
+  +rest.get('lowerleg01.L').distanceTo(rest.get('foot.L'));
+ const stepLength=legLength*Math.sin(THREE.MathUtils.degToRad(stride))*.78;
+ const smooth=u=>u*u*(3-2*u);
+ const start=smooth(Math.min(1,progress));
+ const travel=(progress-.5*start)*stepLength;
+ const lift=legLength*.09;
+ const root=getBone('root');
+ const lateral=new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0),f);
+ captureTranslate(root,f.clone().multiplyScalar(travel)
+  .addScaledVector(lateral,-.021*Math.sin(Math.PI*progress))
+  .setY(-legLength*.052*start+bob*.55*Math.sin(Math.PI*progress)**2));
+ for(const side of ['L','R']){
+  // Each foot keeps its last landing position throughout the other foot's step.
+  const first=side==='L'?0:1;
+  const swingIndex=Math.max(0,Math.floor((progress-first)/2));
+  const step=first+2*swingIndex;
+  const u=THREE.MathUtils.clamp(progress-step,0,1);
+  const previous=step===first?0:step-1;
+  const distance=THREE.MathUtils.lerp(previous,step+1,smooth(u))*stepLength;
+  const ankle=motionBase.ankles[side].clone().addScaledVector(f,distance);
+  const clearance=Math.sin(Math.PI*u)**2;
+  ankle.y+=lift*clearance;
+  captureLegIK(side,ankle,f);
+  const pitch=.18*Math.sin(2*Math.PI*u)*clearance;
+  for(let toe=1;toe<=5;toe++){
+   const joint=getBone("toe"+toe+"-1."+side);
+   if(joint)joint.quaternion.identity();
+  }
+  captureOrient(getBone('foot.'+side),new THREE.Quaternion().setFromAxisAngle(lateral,pitch));
+ }
+}
+
 function motionPose(t){
  if(!motionBase||motionBase.rig!==posed)return;
  bones.forEach((b,i)=>{b.quaternion.copy(motionBase.q[i]);b.position.copy(motionBase.p[i]);});
@@ -3064,6 +3119,7 @@ function motionPose(t){
  }
  posed.updateMatrixWorld(true);
  const crouch=Math.sin(Math.PI*t);
+ const grounded=mode==="Walk";
  if(true){
  for(const side of ["L","R"])for(const [part,next,amount] of [["upperarm01","lowerarm01",.72],["upperleg01","lowerleg01",.85]]){
  const b=getBone(part+"."+side),n=getBone(next+"."+side);if(!b||!n||!b.parent)continue;
@@ -3083,22 +3139,21 @@ function motionPose(t){
  const stealth=["Stealth Walk","Sneak Walk"].includes(mode)?18:0;
  turn("upperleg01."+side,jump?-35*crouch:wave*stride*limp-stealth);
  turn("lowerleg01."+side,jump?65*crouch:Math.max(0,-wave)*knee*limp+stealth);
- turn("foot."+side,jump?-15*crouch:8*Math.cos(p)-Math.max(0,-wave)*12);
- for(let toe=1;toe<=5;toe++)turn("toe"+toe+"-1."+side,jump?0:Math.max(0,Math.cos(p))*12);
- turn("clavicle."+side,jump?0:-wave*arm*.08,up);
- const shoulder=getBone("upperarm01."+side),opposite=getBone("upperarm01."+(side==="L"?"R":"L"));
- if(shoulder&&opposite){const lateral=shoulder.getWorldPosition(new THREE.Vector3()).sub(opposite.getWorldPosition(new THREE.Vector3()));lateral.y=0;lateral.normalize();
- const swing=THREE.MathUtils.degToRad(jump?35*crouch:wave*arm*limp);
- const target=new THREE.Vector3(0,-Math.cos(swing),0).addScaledVector(f,Math.sin(swing)).addScaledVector(lateral,.12).normalize();
- aimCurrent(shoulder.name,"lowerarm01."+side,target);
- const fore=target.clone().applyAxisAngle(axis,-THREE.MathUtils.degToRad(jump?20*crouch:elbow+Math.max(0,wave)*8));
- aimCurrent("lowerarm01."+side,"wrist."+side,fore);}
+ if(!grounded){
+  turn("foot."+side,jump?-15*crouch:8*Math.cos(p)-Math.max(0,-wave)*12);
+  for(let toe=1;toe<=5;toe++)turn("toe"+toe+"-1."+side,jump?0:Math.max(0,Math.cos(p))*12);
+ }
+ if(grounded)turn("shoulder01."+side,wave*arm*.08,up);
+ const swing=grounded?-wave*arm:wave*arm*limp;
+ shoulderAngle(side,jump?35*crouch:swing);
+ elbowAngle(side,jump?20*crouch:elbow+Math.max(0,swing)*.25);
 
  turn("wrist."+side,jump?0:wave*4);
  }
  const height=jump?Math.sin(Math.PI*t)*.28:Math.abs(Math.sin(phase))*bob-(mode==="Stealth Walk"?.06:0);
- bones[0].position.y+=height;
- if(!single){
+ if(grounded)groundedWalk(t,steps,f,stride,bob);
+ else bones[0].position.y+=height;
+ if(!single&&!grounded){
  const root=bones[0];
  const hip=rest.get("upperleg01.L"),ankle=rest.get("foot.L");
  const legLength=hip&&ankle?hip.distanceTo(ankle):.8;
@@ -3161,24 +3216,33 @@ let stanceRig=null,stanceBase=null;
 function applyStance(){
  if(!posed||restRig!==posed){$("stanceStatus").textContent="Build skeleton first.";return;}
  motionRestore();stop410();if(testSnapshot)finishHandTests();
- if(stanceRig!==posed){stanceRig=posed;stanceBase=new Map();for(const side of ["L","R"])for(const part of ["upperarm01","upperleg01"]){const b=getBone(part+"."+side);if(b)stanceBase.set(b.name,b.quaternion.clone());}}
+ if(stanceRig!==posed){stanceRig=posed;stanceBase=new Map();for(const side of ["L","R"]){const b=getBone("upperleg01."+side);if(b)stanceBase.set(b.name,b.quaternion.clone());}}
  const down=new THREE.Vector3(0,-1,0);
  for(const side of ["L","R"])for(const [part,next,id] of [["upperarm01","lowerarm01","stanceArms"],["upperleg01","lowerleg01","stanceLegs"]]){
  const b=getBone(part+"."+side),n=getBone(next+"."+side);if(!b||!n||!b.parent)continue;
- b.quaternion.copy(stanceBase.get(b.name));posed.updateMatrixWorld(true);
+ if(part==="upperarm01")b.quaternion.identity();
+ else b.quaternion.copy(stanceBase.get(b.name));
+ posed.updateMatrixWorld(true);
  const d=n.getWorldPosition(new THREE.Vector3()).sub(b.getWorldPosition(new THREE.Vector3())).normalize();
  const parentInverse=b.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
  const amount=Number($(id).value)/100;
- const outward=b.getWorldPosition(new THREE.Vector3()).sub(getBone(part+"."+(side==="L"?"R":"L")).getWorldPosition(new THREE.Vector3()));outward.y=0;outward.normalize();
- const neutral=part==="upperarm01"?down.clone().addScaledVector(outward,.12).normalize():down;
+ const neutral=part==="upperarm01"?shoulderTarget(side,0):down;
  const target=d.clone().lerp(neutral,amount).normalize();
  const q=new THREE.Quaternion().setFromUnitVectors(d.applyQuaternion(parentInverse),target.applyQuaternion(parentInverse));
  b.quaternion.premultiply(q);posed.updateMatrixWorld(true);
  }
+ const armAmount=Number($("stanceArms").value)/100;
+ for(const side of ["L","R"]){
+  const forearm=getBone("lowerarm01."+side);
+  if(!forearm)continue;
+  elbowAngle(side,0);
+  forearm.quaternion.slerp(new THREE.Quaternion(),1-armAmount);
+ }
+ posed.updateMatrixWorld(true);
  syncJoint();$("stanceStatus").textContent="Stance applied; individual joints remain editable.";
 }
 $("stanceArms").oninput=$("stanceLegs").oninput=applyStance;
-$("stanceNatural").onclick=()=>{$("stanceArms").value=100;$("stanceLegs").value=85;applyStance();for(const side of ["L","R"])elbowAngle(side,0);syncJoint();};
+$("stanceNatural").onclick=()=>{$("stanceArms").value=100;$("stanceLegs").value=85;applyStance();};
 $("stanceA").onclick=()=>{$("stanceArms").value=0;$("stanceLegs").value=0;applyStance();};
 
 
@@ -3213,12 +3277,12 @@ function captureWorld(b){return b.getWorldPosition(new THREE.Vector3());}
 function captureTranslate(b,v){if(b.parent){b.parent.updateWorldMatrix(true,false);const origin=b.parent.worldToLocal(new THREE.Vector3());v=b.parent.worldToLocal(v.clone()).sub(origin);}b.position.add(v);posed.updateMatrixWorld(true);}
 function captureBasis(x,y){x=x.clone().normalize();y=y.clone().addScaledVector(x,-y.dot(x)).normalize();if(x.lengthSq()<1e-8||y.lengthSq()<1e-8)return new THREE.Quaternion();const z=new THREE.Vector3().crossVectors(x,y).normalize();return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x,y,z));}
 function captureOrient(b,q){if(!b||!b.parent)return;const p=b.parent.getWorldQuaternion(new THREE.Quaternion());b.quaternion.copy(p.invert().multiply(q));posed.updateMatrixWorld(true);}
-function captureLegIK(side,goal){
+function captureLegIK(side,goal,kneeDirection){
  const h=getBone("upperleg01."+side),k=getBone("lowerleg01."+side),f=getBone("foot."+side);if(!h||!k||!f)return;
  const H=captureWorld(h),K=captureWorld(k),F=captureWorld(f),a=H.distanceTo(K),b=K.distanceTo(F);
  if(Math.min(a,b)<1e-5)return;
  const dir=goal.clone().sub(H),d=THREE.MathUtils.clamp(dir.length(),Math.abs(a-b)+1e-5,a+b-1e-5);if(dir.lengthSq()<1e-10)return;dir.normalize();
- const pole=K.clone().sub(H).addScaledVector(dir,-K.clone().sub(H).dot(dir));if(pole.lengthSq()<1e-8){pole.copy(forward());pole.addScaledVector(dir,-pole.dot(dir));}if(pole.lengthSq()<1e-8)return;pole.normalize();
+ const pole=kneeDirection?kneeDirection.clone():K.clone().sub(H);pole.addScaledVector(dir,-pole.dot(dir));if(pole.lengthSq()<1e-8){pole.copy(forward());pole.addScaledVector(dir,-pole.dot(dir));}if(pole.lengthSq()<1e-8)return;pole.normalize();
  const along=(a*a-b*b+d*d)/(2*d),height=Math.sqrt(Math.max(0,a*a-along*along));
  const knee=H.clone().addScaledVector(dir,along).addScaledVector(pole,height),ankle=H.clone().addScaledVector(dir,d);
  aimCurrent(h.name,k.name,knee.sub(H));aimCurrent(k.name,f.name,ankle.sub(captureWorld(k)));
