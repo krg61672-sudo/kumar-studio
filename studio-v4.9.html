@@ -3,263 +3,163 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport"
-content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Kumar Studio V4.9</title>
 </head>
 <body style="background:#101827;color:white;font:16px Arial">
-<p id="loading">Loading Anatomical Joint Studio...</p>
-
+<p id="loading">Loading Kumar Studio V4.9...</p>
 <script>
 async function start(){
 
-const response=await fetch('./studio-v4.8.html');
+async function read(file){
+const r=await fetch(file,{cache:'no-cache'});
+if(!r.ok)throw Error(file+' unavailable');
+return await r.text();
+}
 
-if(!response.ok)
-throw Error('V4.8 unavailable');
+let [html,v6,v8]=await Promise.all([
+read('./studio-v4.5.html'),
+read('./studio-v4.6.html'),
+read('./studio-v4.8.html')
+]);
 
-let html=await response.text();
+function extract(source,name){
+const marker='const '+name+'=`';
+const a=source.indexOf(marker);
+if(a<0)throw Error(name+' missing');
+const b=source.indexOf('`;',a+marker.length);
+if(b<0)throw Error(name+' incomplete');
+return source.slice(a+marker.length,b);
+}
+
+const panel=extract(v6,'panel');
+let rig=extract(v6,'rigCode');
+const official=extract(v8,'officialRig');
+
+const begin=rig.indexOf('function createRig(){');
+const end=rig.indexOf('function selectedBone(){');
+
+if(begin<0||end<0)
+throw Error('Rig structure mismatch');
+
+rig=rig.slice(0,begin)+official+rig.slice(end);
+
+const a=rig.indexOf("$('buildRig').onclick=()=>{");
+const b=rig.indexOf("$('joint').onchange=syncJoint;",a);
+
+if(a<0||b<0)
+throw Error('Rig handler missing');
+
+rig=rig.slice(0,a)+`
+$('buildRig').onclick=async()=>{
+if(rigBusy)return;
+rigBusy=true;
+try{
+rigStatus('Loading official anatomical rig...');
+await prepareOfficialRig();
+createRig();
+}catch(e){
+clearRig();
+rigStatus(e.message);
+}finally{
+rigBusy=false;
+}
+};
+`+rig.slice(b);
+
+rig=rig.replace(
+'if(!posed)createRig();',
+'if(!posed){await prepareOfficialRig();createRig();}'
+);
+
+rig=rig.replaceAll(
+String.fromCharCode(92,92,110),
+String.fromCharCode(92,110)
+);
 
 const anatomy=`
 
-function installAnatomy(){
+const anatomyPanel=document.createElement('details');
+anatomyPanel.open=true;
+anatomyPanel.innerHTML=
+'<summary>ANATOMICAL JOINT STUDIO</summary>';
 
-if(document.getElementById('anatomyPanel'))return;
+$('buildRig').closest('details')
+.insertAdjacentElement('afterend',anatomyPanel);
 
-const panel=document.createElement('details');
+const anatomyStatus=document.createElement('p');
+anatomyStatus.textContent='Build skeleton first';
+anatomyPanel.appendChild(anatomyStatus);
 
-panel.id='anatomyPanel';
-panel.open=true;
+let restRig=null;
+const rest=new Map();
+const anatomySliders=[];
 
-panel.innerHTML='<summary>ANATOMICAL JOINT STUDIO</summary>';
-
-const info=document.createElement('p');
-
-info.textContent=
-'Build official skeleton before using controls.';
-
-panel.appendChild(info);
-
-const restPositions=new Map();
-const axes=new Map();
-let activeRig=null;
-
-function findBone(name){
+function getBone(name){
 return bones.find(b=>b.name===name);
 }
 
-function captureRest(){
+function captureAnatomy(){
 
-if(!posed)return false;
+rest.clear();
 
-if(activeRig===posed)return true;
-
-activeRig=posed;
-restPositions.clear();
-axes.clear();
+if(!posed)return;
 
 posed.updateMatrixWorld(true);
 
 for(const b of bones){
-
-const v=new THREE.Vector3();
-
-b.getWorldPosition(v);
-restPositions.set(b.name,v);
+rest.set(b.name,b.getWorldPosition(
+new THREE.Vector3()));
 }
 
-for(const input of panel.querySelectorAll('input')){
-input.value=0;
-}
-
-return true;
+restRig=posed;
 }
 
 function direction(a,b){
-
-const p=restPositions.get(a);
-const q=restPositions.get(b);
-
-if(!p||!q)return null;
-
-return q.clone().sub(p).normalize();
+if(!rest.has(a)||!rest.has(b))return null;
+return rest.get(b).clone()
+.sub(rest.get(a)).normalize();
 }
 
-function bendAxis(name,next,desired){
+function forward(){
+const d=direction('foot.L','toe2-1.L');
 
-const key=name+'|'+next;
-
-if(axes.has(key))
-return axes.get(key).clone();
-
-const dir=direction(name,next);
-
-if(!dir)return null;
-
-const target=desired.clone();
-
-target.addScaledVector(
-dir,-target.dot(dir)
-);
-
-if(target.lengthSq()<0.000001)
-return null;
-
-target.normalize();
-
-const axis=new THREE.Vector3()
-.crossVectors(dir,target)
-.normalize();
-
-axes.set(key,axis.clone());
-
-return axis;
-}
-
-function setBend(name,next,angle,target){
-
-const b=findBone(name);
-
-if(!b)return;
-
-const axis=bendAxis(name,next,target);
-
-if(!axis)return;
-
-b.quaternion.setFromAxisAngle(
-axis,
-THREE.MathUtils.degToRad(angle)
-);
-}
-
-function bodyForward(){
-
-const a=restPositions.get('foot.L');
-const b=restPositions.get('toe2-1.L');
-
-if(a&&b){
-
-const d=b.clone().sub(a);
+if(d){
 d.y=0;
-
-if(d.lengthSq()>0.000001)
-return d.normalize();
+if(d.lengthSq()>0.000001)return d.normalize();
 }
 
 return new THREE.Vector3(0,0,1);
 }
 
-function elbow(side,value){
+function bend(name,next,value,target){
 
-const forward=bodyForward();
+const bone=getBone(name);
+const dir=direction(name,next);
 
-setBend(
-'lowerarm01.'+side,
-'wrist.'+side,
-value,
-forward
-);
-}
-
-function knee(side,value){
-
-const backward=bodyForward()
-.multiplyScalar(-1);
-
-setBend(
-'lowerleg01.'+side,
-'foot.'+side,
-value,
-backward
-);
-}
-
-function shoulder(side,value){
-
-setBend(
-'upperarm01.'+side,
-'lowerarm01.'+side,
-value,
-new THREE.Vector3(0,1,0)
-);
-}
-
-function twist(side,value){
-
-const b=findBone('lowerarm02.'+side);
-
-if(!b)return;
-
-const axis=direction(
-'lowerarm02.'+side,
-'wrist.'+side
-);
-
-if(!axis)return;
-
-b.quaternion.setFromAxisAngle(
-axis,
-THREE.MathUtils.degToRad(value)
-);
-}
-
-function curl(side,value){
-
-const forward=bodyForward();
-
-for(let f=2;f<=5;f++){
-
-for(let j=1;j<=3;j++){
-
-const name='finger'+f+'-'+j+'.'+side;
-
-const next='finger'+f+'-'+(j+1)+'.'+side;
-
-const b=findBone(name);
-
-if(!b)continue;
-
-let dir=direction(name,next);
-
-if(!dir){
-
-dir=direction(
-'finger'+f+'-2.'+side,
-'finger'+f+'-3.'+side
-);
-}
-
-if(!dir)continue;
+if(!bone||!dir)return;
 
 const axis=new THREE.Vector3()
-.crossVectors(dir,forward);
+.crossVectors(dir,target);
 
-if(axis.lengthSq()<0.000001)
-continue;
+if(axis.lengthSq()<0.000001)return;
 
-axis.normalize();
-
-b.quaternion.setFromAxisAngle(
-axis,
+bone.quaternion.setFromAxisAngle(
+axis.normalize(),
 THREE.MathUtils.degToRad(value)
 );
 }
-}
-}
 
-function addSlider(label,min,max,action){
+function addControl(label,min,max,action){
 
 const title=document.createElement('label');
-
-const output=document.createElement('span');
+const value=document.createElement('span');
 
 title.textContent=label+' ';
-output.textContent='0°';
-
-title.appendChild(output);
+value.textContent='0°';
+title.appendChild(value);
 
 const slider=document.createElement('input');
-
 slider.type='range';
 slider.min=min;
 slider.max=max;
@@ -268,140 +168,113 @@ slider.value=0;
 
 slider.oninput=()=>{
 
-if(!captureRest()){
-
-info.textContent=
-'Build Character Skeleton first.';
-
+if(!posed||restRig!==posed){
+slider.value=0;
+anatomyStatus.textContent=
+'Build Character Skeleton first';
 return;
 }
 
-const value=Number(slider.value);
+const angle=Number(slider.value);
 
-output.textContent=value+'°';
+action(angle);
 
-action(value);
+value.textContent=angle+'°';
 
 syncJoint();
 
-info.textContent=
+anatomyStatus.textContent=
 'Anatomical controls active';
 };
 
-panel.appendChild(title);
-panel.appendChild(slider);
+anatomyPanel.appendChild(title);
+anatomyPanel.appendChild(slider);
 
-return {slider,output};
+anatomySliders.push({slider,value});
 }
-
-const controlsList=[];
 
 for(const side of ['L','R']){
 
 const label=side==='L'?'Left':'Right';
 
 const heading=document.createElement('h3');
+heading.textContent=label+' Side';
+anatomyPanel.appendChild(heading);
 
-heading.textContent=label+' Arm';
+addControl(label+' Shoulder Lift',0,120,v=>{
+bend(
+'upperarm01.'+side,
+'lowerarm01.'+side,
+v,new THREE.Vector3(0,1,0)
+);
+});
 
-panel.appendChild(heading);
+addControl(label+' Elbow Bend',0,145,v=>{
+bend(
+'lowerarm01.'+side,
+'wrist.'+side,
+v,forward()
+);
+});
 
-controlsList.push(
-addSlider(
-label+' Shoulder Lift',
-0,130,
-v=>shoulder(side,v)
-)
+addControl(label+' Knee Bend',0,135,v=>{
+bend(
+'lowerleg01.'+side,
+'foot.'+side,
+v,forward().negate()
+);
+});
+
+addControl(label+' Forearm Twist',-85,85,v=>{
+
+const bone=getBone('lowerarm02.'+side);
+const axis=direction(
+'lowerarm02.'+side,'wrist.'+side);
+
+if(bone&&axis){
+bone.quaternion.setFromAxisAngle(
+axis,THREE.MathUtils.degToRad(v));
+}
+});
+
+addControl(label+' Finger Curl',0,90,v=>{
+
+for(let f=2;f<=5;f++){
+for(let j=1;j<=3;j++){
+
+const name='finger'+f+'-'+j+'.'+side;
+
+const bone=getBone(name);
+
+const dir=direction(
+'finger'+f+'-'+Math.min(j,2)+'.'+side,
+'finger'+f+'-'+Math.min(j+1,3)+'.'+side
 );
 
-controlsList.push(
-addSlider(
-label+' Elbow Bend',
-0,145,
-v=>elbow(side,v)
-)
-);
+if(!bone||!dir)continue;
 
-controlsList.push(
-addSlider(
-label+' Forearm Twist',
--85,85,
-v=>twist(side,v)
-)
-);
+const axis=new THREE.Vector3()
+.crossVectors(dir,forward());
 
-controlsList.push(
-addSlider(
-label+' Finger Curl',
-0,90,
-v=>curl(side,v)
-)
+if(axis.lengthSq()<0.000001)continue;
+
+bone.quaternion.setFromAxisAngle(
+axis.normalize(),
+THREE.MathUtils.degToRad(v)
 );
 }
+}
+});
 
-const legHeading=document.createElement('h3');
-
-legHeading.textContent='Leg Controls';
-
-panel.appendChild(legHeading);
-
-for(const side of ['L','R']){
-
-const label=side==='L'?'Left':'Right';
-
-controlsList.push(
-addSlider(
-label+' Knee Bend',
-0,135,
-v=>knee(side,v)
-)
-);
 }
 
-function resetAnatomy(){
+function resetSliders(){
 
-for(const item of controlsList){
-
+for(const item of anatomySliders){
 item.slider.value=0;
-item.output.textContent='0°';
+item.value.textContent='0°';
 }
-
 }
-
-const reset=document.createElement('button');
-
-reset.textContent='Reset Anatomical Pose';
-
-reset.onclick=()=>{
-
-if(!posed)return;
-
-bones.forEach(
-b=>b.quaternion.identity()
-);
-
-resetAnatomy();
-
-for(const id of ['moveX','moveY','moveZ']){
-$(id).value=0;
-}
-
-moveCharacter();
-syncJoint();
-
-info.textContent='Pose reset';
-};
-
-panel.appendChild(reset);
-
-const oldReset=$('resetPose').onclick;
-
-$('resetPose').onclick=()=>{
-
-oldReset();
-resetAnatomy();
-
-};
 
 const oldBuild=$('buildRig').onclick;
 
@@ -409,60 +282,49 @@ $('buildRig').onclick=async()=>{
 
 await oldBuild();
 
-activeRig=null;
-
 if(posed){
-
-captureRest();
-resetAnatomy();
-
-info.textContent=
-'163-bone anatomical controls ready';
-
+captureAnatomy();
+resetSliders();
+anatomyStatus.textContent=
+'Anatomical controls ready';
 }
 };
 
-const manual=$('buildRig').closest('details');
+const oldReset=$('resetPose').onclick;
 
-if(manual){
-manual.insertAdjacentElement('afterend',panel);
-}else{
-document.querySelector('aside').appendChild(panel);
-}
+$('resetPose').onclick=()=>{
+oldReset();
+resetSliders();
+};
 
-}
+const reset=document.createElement('button');
 
-installAnatomy();
+reset.textContent='Reset Anatomical Pose';
+
+reset.onclick=()=>{
+$('resetPose').click();
+};
+
+anatomyPanel.appendChild(reset);
 
 `;
 
 const marker='renderer.setAnimationLoop(()=>{';
 
-const position=html.indexOf(
-"const oldHandler=html.indexOf("
+if(!html.includes(marker))
+throw Error('Studio render source missing');
+
+if(!html.includes('</aside>'))
+throw Error('Studio panel missing');
+
+html=html.replaceAll('V4.5','V4.9');
+
+html=html.replace('</aside>',panel+'</aside>');
+
+html=html.replace(marker,
+rig+'\n'+anatomy+'\n'+marker+
+'\nif(posed&&rigGeneration!==generation)clearRig();'
 );
-
-if(position<0)
-throw Error('V4.8 source incompatible');
-
-const injection=
-"html=html.replace("+
-JSON.stringify(marker)+","+
-JSON.stringify(anatomy+"\n"+marker)+
-");\n";
-
-const writePoint=html.indexOf(
-"document.open();"
-);
-
-if(writePoint<0)
-throw Error('Studio loader not found');
-
-html=html.slice(0,writePoint)+
-injection+
-html.slice(writePoint);
-
-html=html.replaceAll('V4.8','V4.9');
 
 document.open();
 document.write(html);
@@ -471,10 +333,8 @@ document.close();
 }
 
 start().catch(e=>{
-
-document.getElementById('loading')
-.textContent=e.message;
-
+const status=document.getElementById('loading');
+if(status)status.textContent='Error: '+e.message;
 });
 </script>
 </body>
