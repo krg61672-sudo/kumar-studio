@@ -1,0 +1,506 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kumar Studio V4.7</title>
+</head>
+<body style="background:#101827;color:white;font:16px Arial">
+<p id="loading">Loading Advanced Rigging Studio...</p>
+
+<script>
+async function start(){
+
+const response=await fetch('./studio-v4.6.html');
+
+if(!response.ok){
+throw Error('V4.6 source unavailable');
+}
+
+let html=await response.text();
+
+const begin=html.indexOf('function createRig(){');
+const end=html.indexOf('function selectedBone(){',begin);
+
+if(begin<0||end<0){
+throw Error('Rigging source not found');
+}
+
+const improvedRig=`
+function createRig(){
+
+if(!mesh)throw Error('Load human first');
+
+clearRig();
+update();
+mesh.updateMatrixWorld(true);
+
+const geo=mesh.geometry.clone();
+geo.applyMatrix4(mesh.matrixWorld);
+
+const p=geo.attributes.position;
+const box=bounds(p.array);
+
+const h=box.max.y-box.min.y;
+const cx=(box.max.x+box.min.x)/2;
+const cz=(box.max.z+box.min.z)/2;
+const bottom=box.min.y;
+const half=(box.max.x-box.min.x)/2;
+
+function point(x,y,z=0){
+return new THREE.Vector3(
+cx+x*h,
+bottom+y*h,
+cz+z*h
+);
+}
+
+function bone(name,parent,pos){
+
+const b=new THREE.Bone();
+b.name=name;
+
+if(parent>=0){
+b.position.copy(pos)
+.sub(segments[parent].start);
+bones[parent].add(b);
+}else{
+b.position.copy(pos);
+}
+
+bones.push(b);
+
+segments.push({
+start:pos.clone(),
+end:pos.clone(),
+parent:parent
+});
+
+return bones.length-1;
+}
+
+function averageSection(side,xTarget,yTarget,
+xRadius,yRadius,fallback){
+
+const sum=new THREE.Vector3();
+let count=0;
+
+for(let i=0;i<p.count;i++){
+
+const x=(p.getX(i)-cx)/h;
+const y=(p.getY(i)-bottom)/h;
+
+if(Math.sign(x)!==side)continue;
+
+if(Math.abs(Math.abs(x)-xTarget)<xRadius
+&&Math.abs(y-yTarget)<yRadius){
+
+sum.add(new THREE.Vector3(
+p.getX(i),p.getY(i),p.getZ(i)
+));
+
+count++;
+}
+}
+
+return count>4?
+sum.divideScalar(count):fallback;
+}
+
+function armPoint(side,fraction,fallbackY){
+
+const target=half*fraction;
+const sum=new THREE.Vector3();
+let count=0;
+
+for(let i=0;i<p.count;i++){
+
+const x=(p.getX(i)-cx)*side;
+const y=(p.getY(i)-bottom)/h;
+
+if(Math.abs(x-target)<h*.018
+&&y>.30&&y<.90){
+
+sum.add(new THREE.Vector3(
+p.getX(i),p.getY(i),p.getZ(i)
+));
+
+count++;
+}
+}
+
+if(count>4)return sum.divideScalar(count);
+
+return point(
+side*target/h,fallbackY
+);
+}
+
+const pelvis=bone(
+'Pelvis',-1,point(0,.53)
+);
+
+const spine=bone(
+'Lower Spine',pelvis,point(0,.62)
+);
+
+const chest=bone(
+'Chest',spine,point(0,.73)
+);
+
+const neck=bone(
+'Neck',chest,point(0,.85)
+);
+
+const head=bone(
+'Head',neck,point(0,.91)
+);
+
+const armGroups=[];
+const legGroups=[];
+
+for(const side of [-1,1]){
+
+const label=side===1?'Left ':'Right ';
+
+const shoulderPos=averageSection(
+side,.095,.79,.025,.045,
+point(side*.095,.79)
+);
+
+const elbowPos=armPoint(side,.57,.66);
+const wristPos=armPoint(side,.84,.53);
+const handPos=armPoint(side,.96,.48);
+
+const shoulder=bone(
+label+'Shoulder',chest,shoulderPos
+);
+
+const elbow=bone(
+label+'Elbow',shoulder,elbowPos
+);
+
+const wrist=bone(
+label+'Wrist',elbow,wristPos
+);
+
+const hand=bone(
+label+'Hand',wrist,handPos
+);
+
+armGroups.push({
+side,shoulder,elbow,wrist,hand
+});
+
+const hipPos=averageSection(
+side,.055,.51,.035,.035,
+point(side*.055,.51)
+);
+
+const kneePos=averageSection(
+side,.06,.285,.045,.035,
+point(side*.06,.285)
+);
+
+const anklePos=averageSection(
+side,.055,.055,.045,.025,
+point(side*.055,.055)
+);
+
+const hip=bone(
+label+'Hip',pelvis,hipPos
+);
+
+const knee=bone(
+label+'Knee',hip,kneePos
+);
+
+const ankle=bone(
+label+'Ankle',knee,anklePos
+);
+
+const foot=bone(
+label+'Foot',ankle,
+anklePos.clone().add(
+new THREE.Vector3(0,-h*.025,h*.055)
+)
+);
+
+legGroups.push({
+side,hip,knee,ankle,foot
+});
+}
+
+function setEnd(a,b){
+segments[a].end.copy(segments[b].start);
+}
+
+setEnd(pelvis,spine);
+setEnd(spine,chest);
+setEnd(chest,neck);
+setEnd(neck,head);
+
+segments[head].end.copy(point(0,1));
+
+for(const a of armGroups){
+
+setEnd(a.shoulder,a.elbow);
+setEnd(a.elbow,a.wrist);
+setEnd(a.wrist,a.hand);
+
+const d=segments[a.hand].start.clone()
+.sub(segments[a.wrist].start)
+.normalize();
+
+segments[a.hand].end.copy(
+segments[a.hand].start
+).addScaledVector(d,h*.035);
+}
+
+for(const l of legGroups){
+
+setEnd(l.hip,l.knee);
+setEnd(l.knee,l.ankle);
+setEnd(l.ankle,l.foot);
+
+segments[l.foot].end.copy(
+segments[l.foot].start
+).add(new THREE.Vector3(0,0,h*.035));
+}
+
+function distance(v,a,b){
+
+const ab=b.clone().sub(a);
+
+const t=THREE.MathUtils.clamp(
+v.clone().sub(a).dot(ab)/
+Math.max(ab.lengthSq(),.000001),
+0,1
+);
+
+return v.distanceToSquared(
+a.clone().addScaledVector(ab,t)
+);
+}
+
+function smooth(a,b,x){
+
+const t=THREE.MathUtils.clamp(
+(x-a)/(b-a),0,1
+);
+
+return t*t*(3-2*t);
+}
+
+const skinIndices=[];
+const skinWeights=[];
+const v=new THREE.Vector3();
+
+for(let i=0;i<p.count;i++){
+
+v.fromBufferAttribute(p,i);
+
+const x=(v.x-cx)/h;
+const y=(v.y-bottom)/h;
+const ax=Math.abs(x);
+
+const side=x>=0?1:-1;
+
+const a=armGroups.find(
+g=>g.side===side
+);
+
+const l=legGroups.find(
+g=>g.side===side
+);
+
+const shoulderX=Math.abs(
+segments[a.shoulder].start.x-cx
+)/h;
+
+let candidates=[];
+
+function add(id,factor){
+
+if(factor<=0)return;
+
+const s=segments[id];
+
+const d=distance(
+v,s.start,s.end
+);
+
+const weight=factor/
+Math.pow(d+h*h*.00035,2);
+
+candidates.push({
+index:id,
+weight:weight
+});
+}
+
+let armBlend=smooth(
+shoulderX*.88,
+shoulderX+h*.035/h,
+ax
+);
+
+if(y<.40||y>.88){
+armBlend=0;
+}
+
+const legBlend=
+(1-smooth(.46,.56,y))*
+(1-armBlend);
+
+const torsoBlend=Math.max(
+0,1-armBlend-legBlend
+);
+
+add(pelvis,torsoBlend);
+add(spine,torsoBlend);
+add(chest,torsoBlend);
+add(neck,torsoBlend);
+add(head,torsoBlend);
+
+add(a.shoulder,armBlend);
+add(a.elbow,armBlend);
+add(a.wrist,armBlend);
+add(a.hand,armBlend);
+
+add(l.hip,legBlend);
+add(l.knee,legBlend);
+add(l.ankle,legBlend);
+add(l.foot,legBlend);
+
+candidates.sort(
+(a,b)=>b.weight-a.weight
+);
+
+candidates=candidates.slice(0,4);
+
+while(candidates.length<4){
+
+candidates.push({
+index:pelvis,
+weight:0
+});
+}
+
+const total=candidates.reduce(
+(s,n)=>s+n.weight,0
+)||1;
+
+for(const c of candidates){
+
+skinIndices.push(c.index);
+skinWeights.push(c.weight/total);
+}
+}
+
+geo.setAttribute(
+'skinIndex',
+new THREE.Uint16BufferAttribute(
+skinIndices,4
+)
+);
+
+geo.setAttribute(
+'skinWeight',
+new THREE.Float32BufferAttribute(
+skinWeights,4
+)
+);
+
+posed=new THREE.SkinnedMesh(
+geo,material
+);
+
+posed.name='Anatomical Character V4.7';
+
+posed.add(bones[0]);
+scene.add(posed);
+
+posed.updateMatrixWorld(true);
+
+posed.bind(
+new THREE.Skeleton(bones)
+);
+
+posed.normalizeSkinWeights();
+posed.frustumCulled=false;
+
+rigHelper=new THREE.SkeletonHelper(
+posed
+);
+
+scene.add(rigHelper);
+
+rigSource=mesh;
+rigSource.visible=false;
+
+rigGeneration=generation;
+
+rigOrigin.copy(bones[0].position);
+
+$('joint').replaceChildren();
+
+bones.forEach((b,i)=>{
+
+const option=document.createElement(
+'option'
+);
+
+option.value=i;
+option.textContent=b.name;
+
+$('joint').appendChild(option);
+});
+
+for(const id of [
+'moveX','moveY','moveZ'
+]){
+$(id).value=0;
+}
+
+syncJoint();
+
+rigStatus(
+'Improved anatomical rig ready: '+
+bones.length+' joints'
+);
+}
+
+`;
+
+html=html.slice(0,begin)
++improvedRig
++html.slice(end);
+
+html=html.replaceAll('V4.6','V4.7');
+
+html=html.replace(
+'MANUAL POSE STUDIO',
+'ADVANCED POSE STUDIO'
+);
+
+html=html.replace(
+'Build Character Skeleton',
+'Build Anatomical Skeleton'
+);
+
+document.open();
+document.write(html);
+document.close();
+
+}
+
+start().catch(error=>{
+document.getElementById(
+'loading'
+).textContent=error.message;
+});
+</script>
+</body>
+</html>
