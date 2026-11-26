@@ -1,0 +1,634 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+content="width=device-width,initial-scale=1">
+<title>Kumar Studio V4.9.1</title>
+</head>
+
+<body style="background:#101827;color:white;font:16px Arial">
+
+<p id="loading">Loading Advanced Hand Studio...</p>
+
+<script>
+async function start(){
+
+const response=await fetch(
+'./studio-v4.9.html',{cache:'no-cache'}
+);
+
+if(!response.ok)
+throw Error('V4.9 unavailable');
+
+let source=await response.text();
+
+const begin=source.indexOf(
+'const fingerValues='
+);
+
+const end=source.indexOf(
+'function resetSliders(){',begin
+);
+
+if(begin<0||end<0)
+throw Error('Hand source not found');
+
+const handCode=`
+
+const fingerValues={L:0,R:0};
+
+const handState={
+L:{curl:[0,0,0,0,0],spread:0,opposition:0},
+R:{curl:[0,0,0,0,0],spread:0,opposition:0}
+};
+
+const handInputs={L:[],R:[]};
+
+const handNames=[
+'Thumb','Index','Middle','Ring','Little'
+];
+
+function fingerName(side,f,j){
+return 'finger'+f+'-'+j+'.'+side;
+}
+
+function handFrame(side){
+
+const wrist=rest.get('wrist.'+side);
+
+const index=rest.get(
+fingerName(side,2,1)
+);
+
+const middle=rest.get(
+fingerName(side,3,1)
+);
+
+const little=rest.get(
+fingerName(side,5,1)
+);
+
+const thumb=rest.get(
+fingerName(side,1,2)
+);
+
+if(!wrist||!index||!middle||!little)
+return null;
+
+const along=middle.clone()
+.sub(wrist).normalize();
+
+const across=index.clone()
+.sub(little).normalize();
+
+const normal=new THREE.Vector3()
+.crossVectors(along,across)
+.normalize();
+
+const desired=forward().negate();
+
+if(normal.dot(desired)<0)
+normal.negate();
+
+return {
+wrist,index,middle,little,
+thumb,along,across,normal
+};
+
+}
+
+function fingerAxis(side,f,frame){
+
+const d=direction(
+fingerName(side,f,1),
+fingerName(side,f,2)
+);
+
+if(!d)return null;
+
+const inward=frame.normal.clone()
+.addScaledVector(
+d,-frame.normal.dot(d)
+).normalize();
+
+const axis=new THREE.Vector3()
+.crossVectors(d,inward);
+
+if(axis.lengthSq()<0.000001)
+return null;
+
+return axis.normalize();
+
+}
+
+function applyHand(side){
+
+if(!posed||restRig!==posed)return;
+
+const frame=handFrame(side);
+
+if(!frame)return;
+
+const state=handState[side];
+
+const rad=THREE.MathUtils.degToRad;
+
+for(let f=2;f<=5;f++){
+
+const axis=fingerAxis(side,f,frame);
+
+if(!axis)continue;
+
+const curl=state.curl[f-1]/100;
+
+const angles=[75,100,65];
+
+for(let j=1;j<=3;j++){
+
+const bone=getBone(
+fingerName(side,f,j)
+);
+
+if(!bone)continue;
+
+bone.quaternion.setFromAxisAngle(
+axis,rad(angles[j-1]*curl)
+);
+
+if(j===1){
+
+const spreadAngle=
+(f-3.5)*state.spread*0.12;
+
+const q=new THREE.Quaternion()
+.setFromAxisAngle(
+frame.normal,rad(spreadAngle)
+);
+
+bone.quaternion.premultiply(q);
+
+}
+
+}
+
+}
+
+const thumbCurl=state.curl[0]/100;
+
+const thumbBase=getBone(
+fingerName(side,1,1)
+);
+
+const thumbDir=direction(
+fingerName(side,1,1),
+fingerName(side,1,2)
+);
+
+if(thumbBase&&thumbDir){
+
+const target=frame.middle.clone()
+.sub(rest.get(fingerName(side,1,1)))
+.normalize();
+
+target.addScaledVector(
+frame.normal,0.65
+).normalize();
+
+const axis=new THREE.Vector3()
+.crossVectors(thumbDir,target);
+
+thumbBase.quaternion.identity();
+
+if(axis.lengthSq()>0.000001){
+
+const angle=Math.acos(
+THREE.MathUtils.clamp(
+thumbDir.dot(target),-1,1
+)
+);
+
+thumbBase.quaternion.setFromAxisAngle(
+axis.normalize(),
+angle*state.opposition/100
+);
+
+}
+
+}
+
+for(let j=2;j<=3;j++){
+
+const bone=getBone(
+fingerName(side,1,j)
+);
+
+const dir=direction(
+fingerName(side,1,2),
+fingerName(side,1,3)
+);
+
+if(!bone||!dir)continue;
+
+const target=frame.normal.clone()
+.sub(frame.across)
+.normalize();
+
+const axis=new THREE.Vector3()
+.crossVectors(dir,target);
+
+bone.quaternion.identity();
+
+if(axis.lengthSq()>0.000001){
+
+bone.quaternion.setFromAxisAngle(
+axis.normalize(),
+rad((j===2?45:65)*thumbCurl)
+);
+
+}
+
+}
+
+posed.updateMatrixWorld(true);
+
+syncJoint();
+
+}
+
+function handSlider(
+side,label,min,max,action
+){
+
+const title=document.createElement('label');
+
+const output=document.createElement('span');
+
+title.textContent=label+' : ';
+
+output.textContent='0%';
+
+title.appendChild(output);
+
+const input=document.createElement('input');
+
+input.type='range';
+input.min=min;
+input.max=max;
+input.step=1;
+input.value=0;
+
+input.style.width='100%';
+
+input.oninput=()=>{
+
+if(!posed||restRig!==posed){
+
+input.value=0;
+output.textContent='0%';
+
+anatomyStatus.textContent=
+'Build Character Skeleton first';
+
+return;
+
+}
+
+const v=Number(input.value);
+
+output.textContent=v+'%';
+
+action(v);
+
+applyHand(side);
+
+};
+
+anatomyPanel.appendChild(title);
+anatomyPanel.appendChild(input);
+
+const control={input,output};
+
+handInputs[side].push(control);
+
+return control;
+
+}
+
+function showHandValues(side){
+
+const s=handState[side];
+
+const values=[
+...s.curl,s.spread,s.opposition
+];
+
+for(let i=0;i<values.length;i++){
+
+const c=handInputs[side][i];
+
+if(!c)continue;
+
+c.input.value=values[i];
+
+c.output.textContent=values[i]+'%';
+
+}
+
+}
+
+const gestures={
+
+'Open Hand':[0,0,0,0,0,0,0],
+
+'Closed Fist':[65,100,100,100,100,0,85],
+
+'One Finger':[65,0,100,100,100,0,75],
+
+'Two Fingers':[65,0,0,100,100,15,75],
+
+'Three Fingers':[65,0,0,0,100,10,75],
+
+'Four Fingers':[65,0,0,0,0,10,80],
+
+'Middle Finger':[65,100,0,100,100,0,75],
+
+'Thumbs Up':[0,100,100,100,100,0,0],
+
+'Sword Grip':[50,65,75,80,85,0,65],
+
+'Spear Grip':[45,55,65,70,75,0,60],
+
+'Staff Grip':[40,50,60,65,70,0,55],
+
+'Bow Grip':[35,45,55,60,65,0,45],
+
+'Cultivation Seal':[60,0,0,100,100,0,75]
+
+};
+
+function setGesture(side,name){
+
+if(!posed||restRig!==posed){
+
+anatomyStatus.textContent=
+'Build Character Skeleton first';
+
+return;
+
+}
+
+const g=gestures[name];
+
+if(!g)return;
+
+const s=handState[side];
+
+s.curl=g.slice(0,5);
+
+s.spread=g[5];
+
+s.opposition=g[6];
+
+showHandValues(side);
+
+applyHand(side);
+
+anatomyStatus.textContent=
+side+' Hand: '+name;
+
+}
+
+for(const side of ['L','R']){
+
+const label=side==='L'?'Left':'Right';
+
+const heading=document.createElement('h3');
+
+heading.textContent=label+' Body Controls';
+
+anatomyPanel.appendChild(heading);
+
+addControl(label+' Shoulder Lift',0,120,v=>{
+
+bend(
+'upperarm01.'+side,
+'lowerarm01.'+side,
+v,new THREE.Vector3(0,1,0)
+);
+
+});
+
+addControl(label+' Elbow Bend',0,145,v=>{
+
+bend(
+'lowerarm01.'+side,
+'wrist.'+side,
+v,forward()
+);
+
+});
+
+addControl(label+' Knee Bend',0,135,v=>{
+
+bend(
+'lowerleg01.'+side,
+'foot.'+side,
+v,forward().negate()
+);
+
+});
+
+addControl(label+' Forearm Twist',-85,85,v=>{
+
+const bone=getBone('lowerarm02.'+side);
+
+const axis=direction(
+'lowerarm02.'+side,'wrist.'+side
+);
+
+if(bone&&axis){
+
+bone.quaternion.setFromAxisAngle(
+axis,
+THREE.MathUtils.degToRad(v)
+);
+
+}
+
+});
+
+const handHeading=document.createElement('h3');
+
+handHeading.textContent=
+label+' Advanced Hand Studio';
+
+anatomyPanel.appendChild(handHeading);
+
+const preset=document.createElement('select');
+
+preset.style.width='100%';
+
+const placeholder=document.createElement('option');
+
+placeholder.textContent='Select Hand Gesture';
+
+placeholder.value='';
+
+preset.appendChild(placeholder);
+
+for(const name of Object.keys(gestures)){
+
+const option=document.createElement('option');
+
+option.value=name;
+
+option.textContent=name;
+
+preset.appendChild(option);
+
+}
+
+preset.onchange=()=>{
+
+setGesture(side,preset.value);
+
+};
+
+anatomyPanel.appendChild(preset);
+
+for(let i=0;i<5;i++){
+
+handSlider(
+side,label+' '+handNames[i]+' Bend',
+0,100,v=>{
+
+handState[side].curl[i]=v;
+
+});
+
+}
+
+handSlider(
+side,label+' Finger Spread',
+-50,100,v=>{
+
+handState[side].spread=v;
+
+});
+
+handSlider(
+side,label+' Thumb Opposition',
+0,100,v=>{
+
+handState[side].opposition=v;
+
+});
+
+handSlider(
+side,label+' Fist Control',
+0,100,v=>{
+
+const s=handState[side];
+
+s.curl=[v*0.65,v,v,v,v];
+
+s.opposition=v*0.85;
+
+showHandValues(side);
+
+});
+
+handSlider(
+side,label+' Weapon Grip',
+0,100,v=>{
+
+const s=handState[side];
+
+s.curl=[
+v*0.50,
+v*0.65,
+v*0.75,
+v*0.80,
+v*0.85
+];
+
+s.opposition=v*0.65;
+
+showHandValues(side);
+
+});
+
+const resetHand=document.createElement('button');
+
+resetHand.textContent='Reset '+label+' Hand';
+
+resetHand.onclick=()=>{
+
+setGesture(side,'Open Hand');
+
+for(const c of handInputs[side]){
+
+c.input.value=0;
+
+c.output.textContent='0%';
+
+}
+
+preset.value='';
+
+};
+
+anatomyPanel.appendChild(resetHand);
+
+}
+
+`;
+
+source=source.slice(0,begin)+
+handCode+
+source.slice(end);
+
+const resetMarker='function resetSliders(){';
+
+source=source.replace(
+resetMarker,
+resetMarker+
+'\nfor(const side of ["L","R"]){'+
+'\nhandState[side].curl=[0,0,0,0,0];'+
+'\nhandState[side].spread=0;'+
+'\nhandState[side].opposition=0;'+
+'\nfor(const c of handInputs[side]){'+
+'\nc.input.value=0;'+
+'\nc.output.textContent="0%";'+
+'\n}\n}\n'
+);
+
+source=source.replaceAll(
+'V4.9 Finger Fix',
+'V4.9.1 Advanced Hand Studio'
+);
+
+source=source.replaceAll(
+'Anatomical controls ready - Finger Fix',
+'Advanced Hand Studio Ready'
+);
+
+document.open();
+document.write(source);
+document.close();
+
+}
+
+start().catch(e=>{
+
+const status=document.getElementById('loading');
+
+if(status)
+status.textContent='Error: '+e.message;
+
+});
+</script>
+</body>
+</html>
