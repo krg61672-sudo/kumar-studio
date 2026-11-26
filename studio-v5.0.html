@@ -1435,11 +1435,20 @@ return axis.normalize();
 
 function fingerAxis(side,f,frame,j=1){
  if(side!=="L")return originalFingerAxis(side,f,frame);
- // Reflect the working right-hand hinge as an axial vector across the sagittal plane.
- const rightFrame=handFrame("R");
- const rightAxis=rightFrame&&originalFingerAxis("R",f,rightFrame);
- if(!rightAxis)return originalFingerAxis(side,f,frame);
- return new THREE.Vector3(rightAxis.x,-rightAxis.y,-rightAxis.z).normalize();
+ // Independent left palm frame: orient toward the thumb's palmar offset.
+ const normal=new THREE.Vector3().crossVectors(frame.along,frame.across).normalize();
+ const thumb=rest.get(fingerName("L",1,2));
+ const thumbTip=rest.get(fingerName("L",1,3));
+ const center=frame.index.clone().add(frame.little).multiplyScalar(.5);
+ const hint=thumbTip||thumb;
+ if(hint && Math.abs(hint.clone().sub(center).dot(normal))>1e-6){
+  if(hint.clone().sub(center).dot(normal)<0)normal.negate();
+ }else if(normal.dot(frame.normal)<0)normal.negate();
+ const d=direction(fingerName(side,f,j),fingerName(side,f,j+1)) ||
+ direction(fingerName(side,f,j-1),fingerName(side,f,j));
+ if(!d)return null;
+ const axis=new THREE.Vector3().crossVectors(d,normal);
+ return axis.lengthSq()>1e-8?axis.normalize():null;
 }
 
 function applyHand(side){
@@ -1462,7 +1471,7 @@ if(!axis)continue;
 
 const curl=state.curl[f-1]/100;
 
-const angles=[75,100,side==='L' && state.mode==='fist' && f===2 ? 72 : 65];
+const angles=[75,100,65];
 
 for(let j=1;j<=3;j++){
 
