@@ -81,6 +81,17 @@ label{display:block;margin-top:10px}
 </details>
 
 <details>
+<summary>Body Anatomy Customization</summary>
+<label><input id="bodyAnatomyEnabled" type="checkbox"> Enable body proportion adjustments</label>
+<label>Shoulder width</label>
+<input id="anatomyShoulders" type="range" min="0.9" max="1.1" step=".01" value="1">
+<label>Waist width</label>
+<input id="anatomyWaist" type="range" min="0.9" max="1.1" step=".01" value="1">
+<label>Hip width</label>
+<input id="anatomyHips" type="range" min="0.9" max="1.1" step=".01" value="1">
+<p>Adult male and female proportions. Adjust in sculpting mode, then rebuild skeleton.</p>
+</details>
+<details>
 <summary>Camera Studio</summary>
 <button id="front">Front View</button>
 <button id="back">Back View</button>
@@ -281,6 +292,21 @@ p.array[i+2]+=d[3]*m.value;
 }
 }
 
+if($('bodyAnatomyEnabled').checked && originalBase){
+ const b=bounds(p.array), h=b.max.y-b.min.y, cx=(b.min.x+b.max.x)/2;
+ if(h>0){
+  const bands=[[.80,.075,'anatomyShoulders'],[.59,.065,'anatomyWaist'],[.49,.065,'anatomyHips']];
+  for(let i=0;i<p.count;i++){
+   const y=(p.array[i*3+1]-b.min.y)/h;
+   let factor=1;
+   for(const [center,radius,id] of bands){
+    const t=Math.max(0,1-Math.abs(y-center)/radius);
+    factor+=(Number($(id).value)-1)*t*t*(3-2*t);
+   }
+   p.array[i*3]=cx+(p.array[i*3]-cx)*factor;
+  }
+ }
+}
 p.needsUpdate=true;
 mesh.geometry.computeVertexNormals();
 mesh.geometry.computeBoundingSphere();
@@ -526,6 +552,12 @@ for(const id of ['height','width','depth']){
 $(id).oninput=scheduleUpdate;
 }
 
+for(const id of ['bodyAnatomyEnabled','anatomyShoulders','anatomyWaist','anatomyHips']){
+ $(id).oninput=()=>{
+  if(posed){clearRig();rigStatus('Body proportions changed. Rebuild skeleton.');}
+  scheduleUpdate();
+ };
+}
 $('skin').oninput=e=>material.color.set(e.target.value);
 $('roughness').oninput=e=>material.roughness=Number(e.target.value);
 
@@ -548,6 +580,8 @@ $('grid').onclick=()=>grid.visible=!grid.visible;
 $('reset').onclick=()=>{
 for(const m of morphs.values())m.value=0;
 presetName=null;
+$('bodyAnatomyEnabled').checked=false;
+for(const id of ['anatomyShoulders','anatomyWaist','anatomyHips'])$(id).value=1;
 $('height').value=180;
 $('width').value=1;
 $('depth').value=1;
@@ -602,6 +636,7 @@ depth:$('depth').value,
 skin:$('skin').value,
 roughness:$('roughness').value,
 preset:presetName,
+bodyAnatomy:{enabled:$('bodyAnatomyEnabled').checked,shoulders:$('anatomyShoulders').value,waist:$('anatomyWaist').value,hips:$('anatomyHips').value},
 morphs:[...morphs.entries()]
 .filter(([k,m])=>m.value!==0)
 .map(([path,m])=>({path,value:m.value}))
@@ -637,6 +672,8 @@ const m=await getMorph(item.path);
 m.value=THREE.MathUtils.clamp(Number(item.value)||0,0,1);
 }
 
+$('bodyAnatomyEnabled').checked=p.bodyAnatomy?.enabled===true;
+for(const [id,key] of [['anatomyShoulders','shoulders'],['anatomyWaist','waist'],['anatomyHips','hips']])$(id).value=THREE.MathUtils.clamp(Number(p.bodyAnatomy?.[key])||1,.9,1.1);
 presetName=p.preset||null;
 update();
 renderCatalog();
