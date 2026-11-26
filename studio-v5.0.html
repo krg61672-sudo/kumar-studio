@@ -3119,7 +3119,7 @@ function motionPose(t){
  posed.updateMatrixWorld(true);
  const crouch=Math.sin(Math.PI*t);
  if(!jump){
- for(const side of ["L","R"])for(const [part,next,amount] of [["upperarm01","lowerarm01",.92],["upperleg01","lowerleg01",.85]]){
+ for(const side of ["L","R"])for(const [part,next,amount] of [["upperarm01","lowerarm01",.72],["upperleg01","lowerleg01",.85]]){
  const b=getBone(part+"."+side),n=getBone(next+"."+side);if(!b||!n||!b.parent)continue;
  const d=n.getWorldPosition(new THREE.Vector3()).sub(b.getWorldPosition(new THREE.Vector3())).normalize();
  const target=d.clone().lerp(new THREE.Vector3(0,-1,0),amount).normalize();
@@ -3203,7 +3203,8 @@ function applyStance(){
  b.quaternion.copy(stanceBase.get(b.name));posed.updateMatrixWorld(true);
  const d=n.getWorldPosition(new THREE.Vector3()).sub(b.getWorldPosition(new THREE.Vector3())).normalize();
  const parentInverse=b.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
- const target=d.clone().lerp(down,Number($(id).value)/100).normalize();
+ const amount=Number($(id).value)/100;
+ const target=d.clone().lerp(down,amount*(part==="upperarm01"?.76:1)).normalize();
  const q=new THREE.Quaternion().setFromUnitVectors(d.applyQuaternion(parentInverse),target.applyQuaternion(parentInverse));
  b.quaternion.premultiply(q);posed.updateMatrixWorld(true);
  }
