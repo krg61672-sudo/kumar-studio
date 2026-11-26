@@ -3227,6 +3227,25 @@ $("stanceArms").oninput=$("stanceLegs").oninput=applyStance;
 $("stanceNatural").onclick=()=>{$("stanceArms").value=100;$("stanceLegs").value=85;applyStance();for(const side of ["L","R"])elbowAngle(side,0);syncJoint();};
 $("stanceA").onclick=()=>{$("stanceArms").value=0;$("stanceLegs").value=0;applyStance();};
 
+
+// Optional reference environment, independent of character skeleton.
+const trainingStage=new THREE.Group();scene.add(trainingStage);
+const stageFloor=new THREE.Mesh(new THREE.PlaneGeometry(24,24),new THREE.MeshStandardMaterial({color:0x626c70,roughness:1}));stageFloor.rotation.x=-Math.PI/2;stageFloor.position.y=-.012;trainingStage.add(stageFloor);
+const propGroup=new THREE.Group();trainingStage.add(propGroup);
+function stageBox(w,h,d,x,y,z,color,parent=propGroup){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshStandardMaterial({color,roughness:.8}));m.position.set(x,y,z);parent.add(m);return m;}
+const chair=new THREE.Group();propGroup.add(chair);
+stageBox(.48,.055,.48,0,.45,0,0x76523b,chair);
+for(const x of [-.19,.19])for(const z of [-.19,.19])stageBox(.055,.43,.055,x,.215,z,0x513b2e,chair);
+stageBox(.48,.40,.055,0,.70,-.21,0x76523b,chair);
+chair.position.set(1.4,0,0);
+const stairs=new THREE.Group();propGroup.add(stairs);stairs.position.set(-1.7,0,1);
+for(let i=0;i<4;i++)stageBox(.85,.15*(i+1),.30,0,.075*(i+1),-.30*i,0x92969a,stairs);
+const trainingPanel=document.createElement("details");trainingPanel.open=true;
+trainingPanel.innerHTML='<summary>Motion Testing Environment</summary><label><input type="checkbox" id="stageOn" checked> Environment ON/OFF</label><label><input type="checkbox" id="stageGrid" checked> Distance grid (0.5 units)</label><label><input type="checkbox" id="stageChair" checked> Chair</label><label><input type="checkbox" id="stageStairs" checked> Stairs</label><label>Chair X <input id="chairX" type="range" min="-3" max="3" step=".05" value="1.4"></label><label>Chair Z <input id="chairZ" type="range" min="-3" max="3" step=".05" value="0"></label><label>Chair rotation <input id="chairYaw" type="range" min="-180" max="180" value="0"></label><label>Seat height scale <input id="chairHeight" type="range" min=".65" max="1.35" step=".01" value="1"></label><p>Reference props only; automatic seat and stair contact not yet implemented.</p>';
+document.querySelector("aside").prepend(trainingPanel);
+function updateStage(){const enabled=$("stageOn").checked;trainingStage.visible=enabled;grid.visible=enabled&&$("stageGrid").checked;chair.visible=$("stageChair").checked;stairs.visible=$("stageStairs").checked;chair.position.x=Number($("chairX").value);chair.position.z=Number($("chairZ").value);chair.rotation.y=THREE.MathUtils.degToRad(Number($("chairYaw").value));chair.scale.y=Number($("chairHeight").value);scene.background.set(enabled?0x84939e:0x0c1220);}
+for(const id of ["stageOn","stageGrid","stageChair","stageStairs","chairX","chairZ","chairYaw","chairHeight"])$(id).oninput=updateStage;
+updateStage();
 document.title="Kumar Studio V5.0";
 
 
