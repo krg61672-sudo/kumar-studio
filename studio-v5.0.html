@@ -1435,16 +1435,11 @@ return axis.normalize();
 
 function fingerAxis(side,f,frame,j=1){
  if(side!=="L")return originalFingerAxis(side,f,frame);
- // The rig has identity rest rotations and model-aligned bone offsets.
- // Derive the left hinge from its own segment and palm, not the right hand.
- const bone=getBone(fingerName(side,f,j));
- const child=getBone(fingerName(side,f,j+1));
- const d=child&&child.parent===bone ? child.position.clone().normalize() :
-   (bone ? bone.position.clone().normalize() : null);
- if(!d||d.lengthSq()<0.000001)return originalFingerAxis(side,f,frame);
- const inward=frame.normal.clone().addScaledVector(d,-frame.normal.dot(d));
- const axis=new THREE.Vector3().crossVectors(d,inward);
- return axis.lengthSq()>0.000001 ? axis.normalize() : originalFingerAxis(side,f,frame);
+ // Reflect the working right-hand hinge as an axial vector across the sagittal plane.
+ const rightFrame=handFrame("R");
+ const rightAxis=rightFrame&&originalFingerAxis("R",f,rightFrame);
+ if(!rightAxis)return originalFingerAxis(side,f,frame);
+ return new THREE.Vector3(rightAxis.x,-rightAxis.y,-rightAxis.z).normalize();
 }
 
 function applyHand(side){
@@ -1484,7 +1479,7 @@ bone.quaternion.setFromAxisAngle(
 if(j===1){
 
 // The palm normal is a direction. A mirrored rotation about it needs the opposite angle.
-const spreadAngle = (f - 3.5) * (side === 'L' ? (state.spread - 35) * -0.12 : state.spread * 0.12);
+const spreadAngle = (f - 3.5) * (side === 'L' ? -state.spread * 0.12 : state.spread * 0.12);
 
 const q=new THREE.Quaternion()
 .setFromAxisAngle(
