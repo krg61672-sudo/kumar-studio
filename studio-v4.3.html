@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kumar Studio V4.3</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#101827;color:white;font:15px Arial}
+header{padding:15px;background:#192740;color:#f5d18a;font-size:22px;font-weight:bold}
+main{display:flex;height:calc(100dvh - 56px)}
+aside{width:255px;flex-shrink:0;padding:15px;overflow:auto;background:#192740}
+#view{flex:1;min-width:0;position:relative}
+h3{color:#f5d18a}
+label{display:block;margin-top:14px}
+input,select,button{width:100%;margin:6px 0}
+button,select{padding:10px;background:#344c70;color:white;border:1px solid #7188aa;border-radius:6px}
+input[type=range]{accent-color:#78c9ff}
+#status{color:#f5d18a;font-size:12px}
+canvas{display:block;touch-action:none}
+</style>
+<script type="importmap">
+{"imports":{
+"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+"three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+</head>
+<body>
+<header>KUMAR STUDIO V4.3</header>
+<main>
+<aside>
+<h3>HUMAN CREATOR</h3>
+<input id="file" type="file" accept=".obj">
+<button id="load">Load Human Online</button>
+<p id="status">Import original base.obj</p>
+
+<h3>CHARACTER PRESET</h3>
+<select id="gender">
+<option value="male">Adult Male</option>
+<option value="female">Adult Female</option>
+</select>
+<button id="preset">Apply Character Preset</button>
+
+<h3>BODY SETTINGS</h3>
+<label>Height</label>
+<input id="height" type="range" min="0.8" max="1.3" step=".01" value="1">
+<label>Body Width</label>
+<input id="width" type="range" min=".8" max="1.2" step=".01" value="1">
+<label>Body Depth</label>
+<input id="depth" type="range" min=".8" max="1.2" step=".01" value="1">
+
+<h3>MORPH SETTINGS</h3>
+<label>Import MakeHuman .target</label>
+<input id="target" type="file" accept=".target" multiple>
+<div id="morphs"></div>
+
+<label>Skin Colour</label>
+<input id="skin" type="color" value="#d9ad94">
+
+<h3>CAMERA</h3>
+<button id="front">Front View</button>
+<button id="back">Back View</button>
+<button id="side">Side View</button>
+<button id="reset">Reset Morphs</button>
+</aside>
+<div id="view"></div>
+</main>
+
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+
+const $=id=>document.getElementById(id);
+const root='https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/';
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x101827);
+
+const camera=new THREE.PerspectiveCamera(40,1,.01,100);
+camera.position.set(0,1.2,3.5);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+$('view').appendChild(renderer.domElement);
+
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0,.9,0);
+controls.enableDamping=true;
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x606070,2));
+const light=new THREE.DirectionalLight(0xffffff,2);
+light.position.set(3,5,4);
+scene.add(light);
+scene.add(new THREE.GridHelper(12,24));
+
+let mesh,base,indices,morphs=[];
+let generation=0;
+const material=new THREE.MeshStandardMaterial({
+color:0xd9ad94,roughness:.8,side:THREE.DoubleSide
+});
+
+function status(s){$('status').textContent=s}
+
+function parseOBJ(text){
+const verts=[],faces=[];
+let group='',hasBody=false;
+for(const raw of text.split(/\r?\n/)){
+const p=raw.trim().split(/\s+/);
+if(p[0]==='v'){
+verts.push(...p.slice(1,4).map(Number));
+}
+if(p[0]==='g'){
+group=p.slice(1).join(' ');
+if(group==='body')hasBody=true;
+}
+if(p[0]==='f'){
+const ids=p.slice(1).map(x=>{
+const n=parseInt(x.split('/')[0]);
+return n<0?verts.length/3+n:n-1;
+});
+faces.push({group,ids});
+}
+}
+const tris=[];
+for(const f of faces){
+if(hasBody&&f.group!=='body')continue;
+for(let i=1;i<f.ids.length-1;i++){
+tris.push(f.ids[0],f.ids[i],f.ids[i+1]);
+}
+}
+if(!verts.length||!tris.length)throw Error('Invalid OBJ');
+return {verts,tris};
+}
+
+function loadOBJ(text){
+const data=parseOBJ(text);
+generation++;
+if(mesh){
+scene.remove(mesh);
+mesh.geometry.dispose();
+}
+base=new Float32Array(data.verts);
+indices=data.tris;
+morphs=[];
+$('morphs').replaceChildren();
+
+const geo=new THREE.BufferGeometry();
+geo.setAttribute('position',
+new THREE.BufferAttribute(base.slice(),3));
+geo.setIndex(indices);
+
+mesh=new THREE.Mesh(geo,material);
+scene.add(mesh);
+update();
+status('Human mesh ready');
+}
+
+function update(){
+if(!mesh)return;
+const p=mesh.geometry.attributes.position;
+p.array.set(base);
+
+for(const m of morphs){
+for(const d of m.data){
+const i=d[0]*3;
+p.array[i]+=d[1]*m.value;
+p.array[i+1]+=d[2]*m.value;
+p.array[i+2]+=d[3]*m.value;
+}
+}
+
+p.needsUpdate=true;
+mesh.geometry.computeVertexNormals();
+
+const box=new THREE.Box3();
+const v=new THREE.Vector3();
+for(const i of indices){
+v.fromArray(p.array,i*3);
+box.expandByPoint(v);
+}
+const size=box.getSize(new THREE.Vector3());
+const center=box.getCenter(new THREE.Vector3());
+const s=1.8/size.y;
+
+mesh.scale.set(
+s*Number($('width').value),
+s*Number($('height').value),
+s*Number($('depth').value)
+);
+mesh.position.set(
+-center.x*mesh.scale.x,
+-box.min.y*mesh.scale.y,
+-center.z*mesh.scale.z
+);
+}
+
+function addMorph(name,text,value=0){
+if(!base)throw Error('Load base.obj first');
+const data=[];
+for(const line of text.split(/\r?\n/)){
+const t=line.trim();
+if(!t||t.startsWith('#'))continue;
+const a=t.split(/\s+/).map(Number);
+if(a.length>=4&&a.slice(0,4).every(Number.isFinite)
+&&Number.isInteger(a[0])&&a[0]>=0&&a[0]<base.length/3){
+data.push(a.slice(0,4));
+}
+}
+if(!data.length)throw Error('Invalid target file');
+
+const m={data,value};
+morphs.push(m);
+
+const label=document.createElement('label');
+label.textContent=name.replace('.target','');
+const slider=document.createElement('input');
+slider.type='range';
+slider.min='0';
+slider.max='1';
+slider.step='.01';
+slider.value=value;
+slider.oninput=()=>{
+m.value=Number(slider.value);
+update();
+};
+m.slider=slider;
+label.appendChild(slider);
+$('morphs').appendChild(label);
+update();
+}
+
+async function fetchText(url){
+const r=await fetch(url);
+if(!r.ok)throw Error('Download failed: '+r.status);
+return r.text();
+}
+
+$('file').onchange=async e=>{
+try{
+if(e.target.files[0])
+loadOBJ(await e.target.files[0].text());
+}catch(err){status(err.message)}
+};
+
+$('load').onclick=async()=>{
+try{
+status('Loading human...');
+loadOBJ(await fetchText(root+'3dobjs/base.obj'));
+}catch(err){status(err.message+' — import local OBJ')}
+};
+
+$('preset').onclick=async()=>{
+try{
+if(!mesh)throw Error('Load human first');
+const g=generation;
+const name='asian-'+$('gender').value+'-young.target';
+status('Loading adult preset...');
+const text=await fetchText(root+'targets/macrodetails/'+name);
+if(g!==generation)return;
+morphs=[];
+$('morphs').replaceChildren();
+addMorph(name,text,1);
+status('Adult preset applied');
+}catch(err){status(err.message)}
+};
+
+$('target').onchange=async e=>{
+try{
+for(const f of e.target.files){
+addMorph(f.name,await f.text());
+}
+status('Morph targets imported');
+}catch(err){status(err.message)}
+};
+
+for(const id of ['height','width','depth']){
+$(id).oninput=update;
+}
+$('skin').oninput=e=>material.color.set(e.target.value);
+
+function view(x,z){
+camera.position.set(x,1.1,z);
+controls.target.set(0,.9,0);
+controls.update();
+}
+$('front').onclick=()=>view(0,3.5);
+$('back').onclick=()=>view(0,-3.5);
+$('side').onclick=()=>view(3.5,0);
+
+$('reset').onclick=()=>{
+for(const m of morphs){
+m.value=0;
+m.slider.value=0;
+}
+for(const id of ['height','width','depth']){
+$(id).value=1;
+}
+update();
+};
+
+function resize(){
+const w=$('view').clientWidth;
+const h=$('view').clientHeight;
+if(!w||!h)return;
+renderer.setSize(w,h);
+camera.aspect=w/h;
+camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe($('view'));
+resize();
+
+renderer.setAnimationLoop(()=>{
+controls.update();
+renderer.render(scene,camera);
+});
+</script>
+</body>
+</html>
