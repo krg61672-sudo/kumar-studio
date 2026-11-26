@@ -473,13 +473,8 @@ html=html.replace(
 
 html=html.replace(
 marker,
-rig+'\\n'+anatomy+'\\n'+marker+
-'\\nif(posed&&rigGeneration!==generation)clearRig();'
-);
-
-html=html.replaceAll(
-String.fromCharCode(92,110),
-String.fromCharCode(10)
+rig+'\n'+anatomy+'\n'+marker+
+'\nif(posed&&rigGeneration!==generation)clearRig();'
 );
 
 document.open();
