@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Kumar Studio V4.9.3 Hand and Archery Studio</title>
+<title>Kumar Studio V5.0</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#0c1220;color:#eee;font:14px Arial}
@@ -38,7 +38,7 @@ label{display:block;margin-top:10px}
 </script>
 </head>
 <body>
-<header>KUMAR STUDIO V4.9.3 Hand and Archery Studio</header>
+<header>KUMAR STUDIO V5.0 Hand and Archery Studio</header>
 <main>
 <aside>
 <h3>CHARACTER CREATOR</h3>
@@ -1429,8 +1429,8 @@ axis,rad(angles[j-1]*curl)
 
 if(j===1){
 
-const spreadAngle=
-(f-3.5)*state.spread*0.12;
+// The palm normal is a direction. A mirrored rotation about it needs the opposite angle.
+const spreadAngle = (f - 3.5) * state.spread * 0.12 * (side === 'L' ? -1 : 1);
 
 const q=new THREE.Quaternion()
 .setFromAxisAngle(
