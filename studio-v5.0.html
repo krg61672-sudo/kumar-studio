@@ -1247,6 +1247,35 @@ return d.normalize();
 return new THREE.Vector3(0,0,1);
 }
 
+function aimCurrent(name,next,target,strength=1){
+ const b=getBone(name),n=getBone(next);
+ if(!posed||!b||!n||!b.parent)return;
+ posed.updateMatrixWorld(true);
+ const d=n.getWorldPosition(new THREE.Vector3()).sub(b.getWorldPosition(new THREE.Vector3())).normalize();
+ const inv=b.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+ const q=new THREE.Quaternion().setFromUnitVectors(d.applyQuaternion(inv),target.clone().normalize().applyQuaternion(inv));
+ b.quaternion.premultiply(new THREE.Quaternion().slerp(q,strength));
+ posed.updateMatrixWorld(true);
+}
+function armDirection(side){
+ const a=getBone('upperarm01.'+side),b=getBone('lowerarm01.'+side);
+ posed.updateMatrixWorld(true);
+ return a&&b?b.getWorldPosition(new THREE.Vector3()).sub(a.getWorldPosition(new THREE.Vector3())).normalize():new THREE.Vector3(0,-1,0);
+}
+function elbowAngle(side,v){
+ const d=armDirection(side),f=forward();
+ const axis=new THREE.Vector3().crossVectors(d,f);
+ if(axis.lengthSq()<1e-8)axis.crossVectors(d,new THREE.Vector3(0,1,0));
+ if(axis.lengthSq()>1e-8)d.applyAxisAngle(axis.normalize(),THREE.MathUtils.degToRad(v));
+ aimCurrent('lowerarm01.'+side,'wrist.'+side,d);
+}
+function shoulderAngle(side,v){
+ const f=forward(),d=new THREE.Vector3(0,-1,0);
+ const axis=new THREE.Vector3().crossVectors(d,f).normalize();
+ d.applyAxisAngle(axis,THREE.MathUtils.degToRad(v));
+ aimCurrent('upperarm01.'+side,'lowerarm01.'+side,d);
+}
+function neutralArms(){if(!posed)return;for(const side of ['L','R']){shoulderAngle(side,0);elbowAngle(side,0);}syncJoint();}
 function bend(name,next,value,target){
 
 const bone=getBone(name);
@@ -1989,21 +2018,14 @@ anatomyPanel.appendChild(heading);
 
 addControl(label+' Shoulder Lift',0,120,v=>{
 
-bend(
-'upperarm01.'+side,
-'lowerarm01.'+side,
-v,new THREE.Vector3(0,1,0)
-);
+shoulderAngle(side,v);
+elbowAngle(side,Number(anatomySliders[side==='L'?1:5]?.slider.value)||0);
 
 });
 
 addControl(label+' Elbow Bend',0,145,v=>{
 
-bend(
-'lowerarm01.'+side,
-'wrist.'+side,
-v,forward()
-);
+elbowAngle(side,v);
 
 });
 
@@ -2378,6 +2400,7 @@ if(posed){
 captureAnatomy();
 
 resetSliders();
+neutralArms();
 
 anatomyStatus.textContent=
 'Hand and Archery Studio Ready';
@@ -2393,6 +2416,7 @@ $('resetPose').onclick=()=>{
 oldReset();
 
 resetSliders();
+neutralArms();
 
 };
 
@@ -2678,6 +2702,8 @@ function aim410(bone,next,target,strength){
 
 if(!bone||!next||!bone.parent)return;
 
+aimCurrent(bone.name,next.name,target,strength);
+return;
 const original=direction(
 bone.name,next.name
 );
@@ -2787,6 +2813,14 @@ lower,wrist,lowerTarget,
 strength*(0.5+power*0.5)
 );
 
+if(progress>0 && progress<1){
+ const saved=handState[side];
+ const amount=Math.min(1,progress/0.18,(1-progress)/0.12);
+ try{
+ handState[side]={...saved,mode:'fist',curl:[70,100,100,100,100].map(v=>v*amount),spread:0,opposition:85*amount};
+ applyHand(side);
+ }finally{handState[side]=saved;}
+}
 sync410();
 
 syncJoint();
@@ -3163,7 +3197,7 @@ function applyStance(){
  syncJoint();$("stanceStatus").textContent="Stance applied; individual joints remain editable.";
 }
 $("stanceArms").oninput=$("stanceLegs").oninput=applyStance;
-$("stanceNatural").onclick=()=>{$("stanceArms").value=92;$("stanceLegs").value=85;applyStance();};
+$("stanceNatural").onclick=()=>{$("stanceArms").value=100;$("stanceLegs").value=85;applyStance();neutralArms();};
 $("stanceA").onclick=()=>{$("stanceArms").value=0;$("stanceLegs").value=0;applyStance();};
 
 document.title="Kumar Studio V5.0";
