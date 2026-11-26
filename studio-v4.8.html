@@ -1,0 +1,347 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+content="width=device-width,initial-scale=1">
+<title>Kumar Studio V4.8</title>
+</head>
+<body style="background:#101827;color:white;font:16px Arial">
+<p id="loading">Loading Anatomical Rig Studio...</p>
+<script>
+async function start(){
+
+const response=await fetch('./studio-v4.6.html');
+if(!response.ok)throw Error('V4.6 unavailable');
+
+let html=await response.text();
+
+const begin=html.indexOf('function createRig(){');
+const end=html.indexOf('function selectedBone(){',begin);
+
+if(begin<0||end<0)
+throw Error('Rigging source not found');
+
+const officialRig=`
+let officialRigData=null;
+let officialWeightData=null;
+let rigBusy=false;
+
+async function prepareOfficialRig(){
+
+if(officialRigData&&officialWeightData)return;
+
+const path=root+'rigs/';
+
+const files=await Promise.all([
+fetch(path+'default.mhskel'),
+fetch(path+'default_weights.mhw')
+]);
+
+if(files.some(r=>!r.ok))
+throw Error('Official rig download failed');
+
+const data=await Promise.all(
+files.map(r=>r.json())
+);
+
+officialRigData=data[0];
+officialWeightData=data[1];
+}
+
+function createRig(){
+
+if(!mesh)throw Error('Load human first');
+
+if(!originalBase)
+throw Error('Use original MakeHuman model');
+
+if(!officialRigData||!officialWeightData)
+throw Error('Official rig is not loaded');
+
+clearRig();
+update();
+mesh.updateMatrixWorld(true);
+
+const geo=mesh.geometry.clone();
+geo.applyMatrix4(mesh.matrixWorld);
+
+const p=geo.attributes.position;
+const definitions=officialRigData.bones;
+const joints=officialRigData.joints;
+const weights=officialWeightData.weights;
+
+const boneMap=new Map();
+const boneIndex=new Map();
+const jointCache=new Map();
+
+function jointPosition(name){
+
+if(jointCache.has(name))
+return jointCache.get(name).clone();
+
+const ids=joints[name];
+
+if(!Array.isArray(ids)||!ids.length)
+throw Error('Missing joint: '+name);
+
+const result=new THREE.Vector3();
+const v=new THREE.Vector3();
+
+for(const id of ids){
+
+if(!Number.isInteger(id)||id<0||id>=p.count)
+throw Error('Incompatible mesh vertex numbering');
+
+v.fromBufferAttribute(p,id);
+result.add(v);
+}
+
+result.divideScalar(ids.length);
+jointCache.set(name,result.clone());
+
+return result;
+}
+
+function addBone(name){
+
+if(boneMap.has(name))
+return boneMap.get(name);
+
+const def=definitions[name];
+
+if(!def)
+throw Error('Missing bone: '+name);
+
+const parent=def.parent?
+addBone(def.parent):null;
+
+const position=jointPosition(def.head);
+const b=new THREE.Bone();
+
+b.name=name;
+
+if(parent){
+
+const parentPosition=jointPosition(
+definitions[def.parent].head
+);
+
+b.position.copy(position)
+.sub(parentPosition);
+
+parent.add(b);
+
+}else{
+
+b.position.copy(position);
+}
+
+boneIndex.set(name,bones.length);
+boneMap.set(name,b);
+bones.push(b);
+
+return b;
+}
+
+for(const name of Object.keys(definitions)){
+addBone(name);
+}
+
+const rootBone=boneMap.get('root');
+
+if(!rootBone)
+throw Error('Root bone missing');
+
+const influences=Array.from(
+{length:p.count},()=>[]
+);
+
+for(const [name,entries] of Object.entries(weights)){
+
+if(!boneIndex.has(name))continue;
+
+const index=boneIndex.get(name);
+
+for(const entry of entries){
+
+const id=entry[0];
+const weight=entry[1];
+
+if(!Number.isInteger(id)||id<0||id>=p.count)
+throw Error('Weight topology mismatch');
+
+if(weight>0&&Number.isFinite(weight)){
+influences[id].push([index,weight]);
+}
+}
+}
+
+const visibleVertices=new Set(
+geo.index.array
+);
+
+let missing=0;
+
+for(const id of visibleVertices){
+if(!influences[id].length)missing++;
+}
+
+if(missing>0)
+throw Error('Unweighted body vertices: '+missing);
+
+const skinIndices=new Uint16Array(p.count*4);
+const skinWeights=new Float32Array(p.count*4);
+
+for(let i=0;i<p.count;i++){
+
+const list=influences[i]
+.sort((a,b)=>b[1]-a[1])
+.slice(0,4);
+
+if(!list.length){
+
+skinIndices[i*4]=boneIndex.get('root');
+skinWeights[i*4]=1;
+continue;
+}
+
+const total=list.reduce(
+(sum,item)=>sum+item[1],0
+);
+
+for(let k=0;k<list.length;k++){
+
+skinIndices[i*4+k]=list[k][0];
+skinWeights[i*4+k]=list[k][1]/total;
+}
+}
+
+geo.setAttribute(
+'skinIndex',
+new THREE.Uint16BufferAttribute(skinIndices,4)
+);
+
+geo.setAttribute(
+'skinWeight',
+new THREE.Float32BufferAttribute(skinWeights,4)
+);
+
+posed=new THREE.SkinnedMesh(geo,material);
+
+posed.name='MakeHuman Anatomical Character';
+posed.add(rootBone);
+scene.add(posed);
+posed.updateMatrixWorld(true);
+
+posed.bind(new THREE.Skeleton(bones));
+posed.frustumCulled=false;
+
+rigHelper=new THREE.SkeletonHelper(posed);
+scene.add(rigHelper);
+
+rigSource=mesh;
+rigSource.visible=false;
+rigGeneration=generation;
+rigOrigin.copy(rootBone.position);
+
+const friendly={
+'root':'Pelvis / Root',
+'head':'Head',
+'neck01':'Neck',
+'upperarm01.L':'Left Shoulder',
+'upperarm01.R':'Right Shoulder',
+'lowerarm01.L':'Left Elbow',
+'lowerarm01.R':'Right Elbow',
+'wrist.L':'Left Wrist',
+'wrist.R':'Right Wrist',
+'upperleg01.L':'Left Hip',
+'upperleg01.R':'Right Hip',
+'lowerleg01.L':'Left Knee',
+'lowerleg01.R':'Right Knee',
+'foot.L':'Left Foot',
+'foot.R':'Right Foot'
+};
+
+$('joint').replaceChildren();
+
+const ordered=[
+...Object.keys(friendly),
+...bones.map(b=>b.name)
+.filter(n=>!friendly[n])
+];
+
+for(const name of ordered){
+
+if(!boneIndex.has(name))continue;
+
+const option=document.createElement('option');
+
+option.value=boneIndex.get(name);
+option.textContent=friendly[name]||name;
+
+$('joint').appendChild(option);
+}
+
+for(const id of ['moveX','moveY','moveZ']){
+$(id).value=0;
+}
+
+syncJoint();
+
+rigStatus(
+'Official MakeHuman rig ready: '+
+bones.length+' bones'
+);
+}
+
+`;
+
+html=html.slice(0,begin)+
+officialRig+
+html.slice(end);
+
+const oldHandler=html.indexOf(
+"$('buildRig').onclick=()=>{"
+);
+
+const nextHandler=html.indexOf(
+"$('joint').onchange=syncJoint;",
+oldHandler
+);
+
+if(oldHandler<0||nextHandler<0)
+throw Error('Rig button source not found');
+
+const newHandler=
+"$('buildRig').onclick=async()=>{"+
+"if(rigBusy)return;"+
+"rigBusy=true;"+
+"try{"+
+"rigStatus('Downloading official rig and weights...');"+
+"await prepareOfficialRig();"+
+"createRig();"+
+"}catch(e){clearRig();rigStatus(e.message)}"+
+"finally{rigBusy=false;}"+
+"};";
+
+html=html.slice(0,oldHandler)+
+newHandler+
+html.slice(nextHandler);
+
+html=html.replaceAll('V4.6','V4.8');
+html=html.replaceAll('V4.5','V4.8');
+
+document.open();
+document.write(html);
+document.close();
+}
+
+start().catch(e=>{
+document.getElementById('loading')
+.textContent=e.message;
+});
+</script>
+</body>
+</html>
