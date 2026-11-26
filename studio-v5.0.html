@@ -3086,8 +3086,14 @@ function motionPose(t){
  turn("foot."+side,jump?-15*crouch:8*Math.cos(p)-Math.max(0,-wave)*12);
  for(let toe=1;toe<=5;toe++)turn("toe"+toe+"-1."+side,jump?0:Math.max(0,Math.cos(p))*12);
  turn("clavicle."+side,jump?0:-wave*arm*.08,up);
- turn("upperarm01."+side,jump?-35*crouch:-wave*arm*limp);
- turn("lowerarm01."+side,jump?20*crouch:elbow+Math.max(0,wave)*8);
+ const shoulder=getBone("upperarm01."+side),opposite=getBone("upperarm01."+(side==="L"?"R":"L"));
+ if(shoulder&&opposite){const lateral=shoulder.getWorldPosition(new THREE.Vector3()).sub(opposite.getWorldPosition(new THREE.Vector3()));lateral.y=0;lateral.normalize();
+ const swing=THREE.MathUtils.degToRad(jump?35*crouch:wave*arm*limp);
+ const target=new THREE.Vector3(0,-Math.cos(swing),0).addScaledVector(f,Math.sin(swing)).addScaledVector(lateral,.12).normalize();
+ aimCurrent(shoulder.name,"lowerarm01."+side,target);
+ const fore=target.clone().applyAxisAngle(axis,-THREE.MathUtils.degToRad(jump?20*crouch:elbow+Math.max(0,wave)*8));
+ aimCurrent("lowerarm01."+side,"wrist."+side,fore);}
+
  turn("wrist."+side,jump?0:wave*4);
  }
  const height=jump?Math.sin(Math.PI*t)*.28:Math.abs(Math.sin(phase))*bob-(mode==="Stealth Walk"?.06:0);
@@ -3163,7 +3169,9 @@ function applyStance(){
  const d=n.getWorldPosition(new THREE.Vector3()).sub(b.getWorldPosition(new THREE.Vector3())).normalize();
  const parentInverse=b.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
  const amount=Number($(id).value)/100;
- const target=d.clone().lerp(down,amount*(part==="upperarm01"?.76:1)).normalize();
+ const outward=b.getWorldPosition(new THREE.Vector3()).sub(getBone(part+"."+(side==="L"?"R":"L")).getWorldPosition(new THREE.Vector3()));outward.y=0;outward.normalize();
+ const neutral=part==="upperarm01"?down.clone().addScaledVector(outward,.12).normalize():down;
+ const target=d.clone().lerp(neutral,amount).normalize();
  const q=new THREE.Quaternion().setFromUnitVectors(d.applyQuaternion(parentInverse),target.applyQuaternion(parentInverse));
  b.quaternion.premultiply(q);posed.updateMatrixWorld(true);
  }
