@@ -1,0 +1,101 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+content="width=device-width,initial-scale=1">
+<title>Kumar Studio V4.10.1</title>
+</head>
+
+<body style="background:#101827;color:white;font:16px Arial">
+
+<p id="loading">
+Loading Kumar Studio V4.10.1...
+</p>
+
+<script>
+async function start(){
+
+const response=await fetch(
+'./studio-v4.10.html',
+{cache:'no-cache'}
+);
+
+if(!response.ok)
+throw Error('V4.10 source unavailable');
+
+let source=await response.text();
+
+const oldCode=
+'upgrade+"'+
+String.fromCharCode(92,92)+
+'n"+marker';
+
+const newCode=
+'upgrade+String.fromCharCode(10)+marker';
+
+if(!source.includes(oldCode))
+throw Error('Initialization patch not found');
+
+source=source.replace(
+oldCode,
+newCode
+);
+
+source=source.replaceAll(
+'Kumar Studio V4.10',
+'Kumar Studio V4.10.1'
+);
+
+const diagnostic=`
+window.addEventListener('error',function(e){
+
+const panel=document.createElement('div');
+
+panel.style.cssText=
+'position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#991b1b;color:white;padding:12px;font:14px Arial';
+
+panel.textContent=
+'Studio Error: '+e.message+
+' | Line: '+e.lineno;
+
+document.body.appendChild(panel);
+
+});
+`;
+
+const marker='document.open();';
+
+if(!source.includes(marker))
+throw Error('Studio output missing');
+
+const injection=
+'source=source.replace("</head>",'+
+JSON.stringify(
+'<script>'+diagnostic+
+'</scr'+'ipt></head>'
+)+
+');'+String.fromCharCode(10);
+
+source=source.replace(
+marker,
+()=>injection+marker
+);
+
+document.open();
+document.write(source);
+document.close();
+
+}
+
+start().catch(error=>{
+
+document.getElementById('loading')
+.textContent='Error: '+error.message;
+
+});
+</script>
+
+</body>
+</html>
