@@ -3291,11 +3291,20 @@ const seqTotal=()=>seqItems.reduce((n,x)=>n+x.duration,0);
 $("seqPlay").onclick=()=>{if(seqRAF)cancelAnimationFrame(seqRAF);if(!seqPrepare()){$("seqStatus").textContent="Build skeleton and add actions first.";return;}const start=performance.now(),total=seqTotal();function frame(now){if(!seqBase||seqBase.rig!==posed){seqStop();return;}const t=Math.min(total,(now-start)/1000);seqPose(t);$("seqTime").value=Math.round(t/total*1000);if(t<total)seqRAF=requestAnimationFrame(frame);else seqRAF=0;}seqRAF=requestAnimationFrame(frame);};
 $("seqStop").onclick=seqStop;$("seqTime").oninput=()=>{if(seqRAF)cancelAnimationFrame(seqRAF);seqRAF=0;if(seqPrepare())seqPose(Number($("seqTime").value)/1000*seqTotal());};
 for(const id of ["motionPlay","bvhPlay","resetPose","runHandTests","stanceNatural","stanceA"]){const old=$(id).onclick;$(id).onclick=()=>{if(seqBase)seqStop();return old?.();};}
+
+const blenderPanel=document.createElement("details");blenderPanel.open=true;
+blenderPanel.innerHTML='<summary>Blender Python Bridge</summary><button id="blenderExport">Export character rig (.glb)</button><label>Preview Blender output <input id="blenderImport" type="file" accept=".glb"></label><button id="blenderClear">Remove imported preview</button><p id="blenderStatus">Build skeleton before export. Blender processing is external.</p>';
+document.querySelector("aside").prepend(blenderPanel);
+let blenderPreview=null,blenderMixer=null;const blenderClock=new THREE.Clock();
+$("blenderExport").onclick=async()=>{try{if(!posed||restRig!==posed)throw Error("Build skeleton first.");const {GLTFExporter}=await import("three/addons/exporters/GLTFExporter.js");posed.updateMatrixWorld(true);const result=await new GLTFExporter().parseAsync(posed,{binary:true,onlyVisible:false});const url=URL.createObjectURL(new Blob([result],{type:"model/gltf-binary"}));const a=document.createElement("a");a.href=url;a.download="kumar-character.glb";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);$("blenderStatus").textContent="Character rig exported.";}catch(e){$("blenderStatus").textContent=e.message;}};
+$("blenderClear").onclick=()=>{if(blenderPreview)scene.remove(blenderPreview);blenderPreview=null;blenderMixer=null;};
+$("blenderImport").onchange=async()=>{try{const file=$("blenderImport").files[0];if(!file)return;const {GLTFLoader}=await import("three/addons/loaders/GLTFLoader.js");const result=await new GLTFLoader().parseAsync(await file.arrayBuffer(),"");$("blenderClear").click();blenderPreview=result.scene;blenderPreview.position.x=2;scene.add(blenderPreview);blenderMixer=new THREE.AnimationMixer(blenderPreview);if(result.animations.length)blenderMixer.clipAction(result.animations[0]).play();$("blenderStatus").textContent="Preview loaded: "+result.animations.length+" animation clips.";}catch(e){$("blenderStatus").textContent=e.message;}};
 document.title="Kumar Studio V5.0";
 
 
 
 renderer.setAnimationLoop(()=>{
+if(blenderMixer)blenderMixer.update(Math.min(.1,blenderClock.getDelta()));else blenderClock.getDelta();
 if(posed&&rigGeneration!==generation)clearRig();
 controls.update();
 renderer.render(scene,camera);
