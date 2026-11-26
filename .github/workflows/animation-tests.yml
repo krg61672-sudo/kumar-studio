@@ -1,0 +1,23 @@
+name: Animation tests
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'animation_engine/**'
+      - 'studio-v5.0.html'
+      - '.github/workflows/animation-tests.yml'
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m compileall -q animation_engine
+      - run: python animation_engine/reactions.py
+      - run: sudo apt-get update && sudo apt-get install -y blender
+      - run: blender --background --factory-startup --python-expr "import bpy; print(bpy.app.version_string)"
