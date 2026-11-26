@@ -2739,94 +2739,39 @@ posed.updateMatrixWorld(true);
 }
 
 function punch410(progress){
-
-if(!posed||!restore410())return;
-
-const side=side410.value;
-
-const upper=getBone("upperarm01."+side);
-
-const lower=getBone("lowerarm01."+side);
-
-const wrist=getBone("wrist."+side);
-
-if(!upper||!lower||!wrist){
-
-stop410();
-
-status410.textContent=
-"Required arm bones not found";
-
-return;
-
+ if(!posed||!restore410())return;
+ const side=side410.value,other=side==="L"?"R":"L",upper=getBone("upperarm01."+side),lower=getBone("lowerarm01."+side),wrist=getBone("wrist."+side);
+ if(!upper||!lower||!wrist)return;
+ const smooth=(a,b)=>THREE.MathUtils.smoothstep(progress,a,b);
+ const guard=smooth(0,.16)*(1-smooth(.84,1)),strike=smooth(.22,.46)*(1-smooth(.49,.76)),wind=smooth(.10,.22)*(1-smooth(.22,.40));
+ const power=Number(power410.slider.value)/100,reach=THREE.MathUtils.clamp(Number(reach410.slider.value)/100,0,1);
+ const up=new THREE.Vector3(0,1,0),f=forward().clone().applyAxisAngle(up,THREE.MathUtils.degToRad(Number(angle410.slider.value)));
+ const outward=captureWorld(upper).sub(captureWorld(getBone("upperarm01."+other)));outward.y=0;outward.normalize();
+ const sign=Math.sign(up.dot(outward.clone().cross(f)))||1;
+ const rotate=(name,axis,deg)=>{const b=getBone(name);if(!b)return;captureOrient(b,new THREE.Quaternion().setFromAxisAngle(axis,THREE.MathUtils.degToRad(deg)).multiply(b.getWorldQuaternion(new THREE.Quaternion())));};
+ const feet=["L","R"].map(s=>{const b=getBone("foot."+s);return b?captureWorld(b):null;});
+ rotate("pelvis",up,sign*(22*strike-12*wind)*power);
+ for(const j of spineChain())rotate(j.name,up,sign*(20*strike-8*wind)*power/Math.max(1,spineChain().length));
+ rotate("head",up,-sign*12*strike*power);
+ const solve=(s,goal)=>{const h=getBone("upperarm01."+s),k=getBone("lowerarm01."+s),w=getBone("wrist."+s);if(!h||!k||!w)return;
+ const H=captureWorld(h),K=captureWorld(k),W=captureWorld(w),a=H.distanceTo(K),b=K.distanceTo(W),dvec=goal.clone().sub(H);if(Math.min(a,b,dvec.length())<1e-5)return;
+ const d=THREE.MathUtils.clamp(dvec.length(),Math.abs(a-b)+.001,(a+b)*.985),dir=dvec.normalize();
+ const pole=up.clone().negate().addScaledVector(dir,up.dot(dir));if(pole.lengthSq()<1e-8)pole.copy(outward);pole.normalize();
+ const along=(a*a-b*b+d*d)/(2*d),height=Math.sqrt(Math.max(0,a*a-along*along));
+ const elbow=H.clone().addScaledVector(dir,along).addScaledVector(pole,height),hand=H.clone().addScaledVector(dir,d);
+ aimCurrent(h.name,k.name,elbow.sub(H));aimCurrent(k.name,w.name,hand.sub(captureWorld(k)));
+ };
+ for(const s of [side,other]){const h=getBone("upperarm01."+s),k=getBone("lowerarm01."+s),w=getBone("wrist."+s);if(!h||!k||!w)continue;
+ const H=captureWorld(h),W=captureWorld(w),length=H.distanceTo(captureWorld(k))+captureWorld(k).distanceTo(W);
+ const g=H.clone().addScaledVector(f,length*.34).addScaledVector(up,length*.12).addScaledVector(outward,s===side?-length*.12:length*.12);
+ if(s===side){g.addScaledVector(f,-length*.13*wind);const hit=H.clone().addScaledVector(f,length*(.70+.27*reach)).addScaledVector(up,-length*.04).addScaledVector(outward,-length*.08);g.lerp(hit,strike);}
+ solve(s,W.clone().lerp(g,guard));
+ if(guard>0){const saved=handState[s],adjust=jointAdjust[s];try{handState[s]={...saved,mode:"fist",curl:[70,100,100,100,100].map(v=>v*guard),spread:0,opposition:85*guard};jointAdjust[s]=Array.from({length:5},()=>[0,0,0]);applyHand(s);}finally{handState[s]=saved;jointAdjust[s]=adjust;}}
+ }
+ for(const [i,s] of ["L","R"].entries())if(feet[i])captureLegIK(s,feet[i]);
+ if(progress===0||progress===1)restore410();
+ sync410();syncJoint();
 }
-
-const power=Number(
-power410.slider.value
-)/100;
-
-const reach=Number(
-reach410.slider.value
-)/100;
-
-const forwardVector=forward().clone();
-
-forwardVector.applyAxisAngle(
-new THREE.Vector3(0,1,0),
-THREE.MathUtils.degToRad(
-Number(angle410.slider.value)
-)
-);
-
-const envelope=Math.sin(
-Math.PI*progress
-);
-
-const strength=Math.min(
-1,envelope*1.3
-);
-
-const extension=Math.min(
-1,strength*reach
-);
-
-const upperTarget=forwardVector.clone();
-
-upperTarget.y=-0.15;
-
-upperTarget.normalize();
-
-aim410(
-upper,lower,upperTarget,
-extension
-);
-
-const lowerTarget=forwardVector.clone();
-
-lowerTarget.y=
-(1-extension)*0.75;
-
-lowerTarget.normalize();
-
-aim410(
-lower,wrist,lowerTarget,
-strength*(0.5+power*0.5)
-);
-
-if(progress>0 && progress<1){
- const saved=handState[side];
- const amount=Math.min(1,progress/0.18,(1-progress)/0.12);
- try{
- handState[side]={...saved,mode:'fist',curl:[70,100,100,100,100].map(v=>v*amount),spread:0,opposition:85*amount};
- applyHand(side);
- }finally{handState[side]=saved;}
-}
-sync410();
-
-syncJoint();
-
-}
-
 const play410=ui410(
 "button","Play Straight Punch"
 );
@@ -2844,7 +2789,7 @@ return;
 
 }
 
-const duration=1200/
+const duration=1450/
 (Number(speed410.slider.value)/100);
 
 const startTime=performance.now();
