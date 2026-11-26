@@ -981,7 +981,13 @@ function rotateJoint(){
 const b=selectedBone();
 if(!b)return;
 for(const axis of ['x','y','z']){
-const val=Number($('r'+axis).value);
+let val=Number($('r'+axis).value);
+// Prevent extreme single-vertebra rotations that collapse the torso mesh.
+if(/^spine0[1-5]$/.test(b.name)){
+ const limit=axis==='y'?18:22;
+ val=THREE.MathUtils.clamp(val,-limit,limit);
+ $('r'+axis).value=val;
+}
 b.rotation[axis]=THREE.MathUtils.degToRad(val);
 $('r'+axis+'v').textContent=val+'°';
 }
@@ -1417,7 +1423,7 @@ if(!axis)continue;
 
 const curl=state.curl[f-1]/100;
 
-const angles=[75,100,65];
+const angles=[75,100,side==='L' && state.mode==='fist' && f===2 ? 72 : 65];
 
 for(let j=1;j<=3;j++){
 
