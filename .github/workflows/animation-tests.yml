@@ -21,3 +21,12 @@ jobs:
       - run: python animation_engine/reactions.py
       - run: sudo apt-get update && sudo apt-get install -y blender
       - run: blender --background --factory-startup --python-expr "import bpy; print(bpy.app.version_string)"
+      - name: Render smoke test
+        run: |
+          mkdir -p test-output
+          blender --background --factory-startup --python-expr "import bpy; s=bpy.context.scene; s.render.engine='BLENDER_WORKBENCH'; s.render.resolution_x=640; s.render.resolution_y=480; s.render.resolution_percentage=100; s.render.filepath='test-output/smoke.png'; bpy.ops.render.render(write_still=True)"
+          test -s test-output/smoke.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blender-render-test
+          path: test-output/
