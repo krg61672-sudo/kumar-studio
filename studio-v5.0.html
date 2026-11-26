@@ -3043,10 +3043,12 @@ $('handTestStop').onclick=()=>{finishHandTests();$('handTestStatus').textContent
 
 const locomotionPanel=document.createElement("details");
 locomotionPanel.open=true;
-locomotionPanel.innerHTML='<summary>V5.1 Motion Presets</summary><select id="motionPreset"><option>Walk</option><option>Royal Walk</option><option>Confident Walk</option><option>Stealth Walk</option><option>Tired Walk</option><option>Injured Walk</option><option>Slow Walk</option><option>Brisk Walk</option><option>March</option><option>Guard Patrol</option><option>Elderly Walk</option><option>Sneak Walk</option><option>Sad Walk</option><option>Angry Walk</option><option>Graceful Walk</option><option>Heavy Walk</option><option>Run</option><option>Jump</option><option>Flying Launch</option><option>Sit Down</option><option>Stand Up</option></select><label>Speed <input id="motionSpeed" type="range" min="25" max="200" value="100"></label><label>Steps <select id="motionSteps"><option value="4">4 steps</option><option value="6">6 steps</option><option value="8">8 steps</option><option value="12">12 steps</option></select></label><label>Timeline <input id="motionTime" type="range" min="0" max="100" value="0"></label><button id="motionPlay">Play</button><button id="motionPause">Pause</button><button id="motionRestore">Restore Base Pose</button><p id="motionStatus">Build skeleton first.</p>';
+locomotionPanel.innerHTML='<summary>V5.1 Motion Presets</summary><select id="motionPreset"><option>Walk</option><option>Royal Walk</option><option>Confident Walk</option><option>Stealth Walk</option><option>Tired Walk</option><option>Injured Walk</option><option>Slow Walk</option><option>Brisk Walk</option><option>March</option><option>Guard Patrol</option><option>Elderly Walk</option><option>Sneak Walk</option><option>Sad Walk</option><option>Angry Walk</option><option>Graceful Walk</option><option>Heavy Walk</option><option>Run</option><option>Jump</option><option>Flying Launch</option><option>Sit Down</option><option>Stand Up</option><option>Quiet Standing</option><option>Speaking Gesture</option><option>Listening</option><option>Restrained Anger</option></select><label>Speed <input id="motionSpeed" type="range" min="25" max="200" value="100"></label><label>Steps <select id="motionSteps"><option value="4">4 steps</option><option value="6">6 steps</option><option value="8">8 steps</option><option value="12">12 steps</option></select></label><label>Timeline <input id="motionTime" type="range" min="0" max="100" value="0"></label><button id="motionPlay">Play</button><button id="motionPause">Pause</button><button id="motionRestore">Restore Base Pose</button><p id="motionStatus">Build skeleton first.</p>';
 document.querySelector("aside").appendChild(locomotionPanel);
 let motionBase=null,motionFrame=0,motionProgress=0;
 function motionPause(){if(motionFrame)cancelAnimationFrame(motionFrame);motionFrame=0;}
+const actingDurations={"Quiet Standing":6400,"Speaking Gesture":4600,"Listening":5000,"Restrained Anger":4800};
+const singleMotions=new Set(["Jump","Flying Launch","Sit Down","Stand Up",...Object.keys(actingDurations)]);
 function motionRestore(){
  motionPause();
  if(motionBase&&motionBase.rig===posed){bones.forEach((b,i)=>{b.quaternion.copy(motionBase.q[i]);b.position.copy(motionBase.p[i]);});posed.updateMatrixWorld(true);syncJoint();}
@@ -3060,7 +3062,10 @@ function motionCapture(){
  if(!motionBase||motionBase.rig!==posed){
   posed.updateMatrixWorld(true);
   motionBase={rig:posed,q:bones.map(b=>b.quaternion.clone()),p:bones.map(b=>b.position.clone()),
-   ankles:Object.fromEntries(['L','R'].map(side=>[side,captureWorld(getBone('foot.'+side))]))};
+   feet:Object.fromEntries(['L','R'].map(side=>{
+    const foot=getBone('foot.'+side);
+    return [side,{position:captureWorld(foot),orientation:foot.getWorldQuaternion(new THREE.Quaternion())}];
+   }))};
  }
  return true;
 }
@@ -3080,23 +3085,80 @@ function groundedWalk(t,steps,f,stride,bob){
   .addScaledVector(lateral,-.021*Math.sin(Math.PI*progress))
   .setY(-legLength*.052*start+bob*.55*Math.sin(Math.PI*progress)**2));
  for(const side of ['L','R']){
-  // Each foot keeps its last landing position throughout the other foot's step.
+  // A step is half a gait cycle. The first fifth is overlapping support.
   const first=side==='L'?0:1;
-  const swingIndex=Math.max(0,Math.floor((progress-first)/2));
-  const step=first+2*swingIndex;
-  const u=THREE.MathUtils.clamp(progress-step,0,1);
+  const swingStart=.2;
+  const step=first+2*Math.max(0,Math.floor((progress-first)/2));
+  const u=THREE.MathUtils.clamp((progress-step-swingStart)/(1-swingStart),0,1);
   const previous=step===first?0:step-1;
+  const lastRoll=step+1>steps;
   const distance=THREE.MathUtils.lerp(previous,step+1,smooth(u))*stepLength;
-  const ankle=motionBase.ankles[side].clone().addScaledVector(f,distance);
-  const clearance=Math.sin(Math.PI*u)**2;
-  ankle.y+=lift*clearance;
+  const ankle=motionBase.feet[side].position.clone().addScaledVector(f,distance);
+  const supportPhase=progress-step;
+  const toes=rest.get('toe2-1.'+side).clone().sub(rest.get('foot.'+side)).dot(f);
+  const toePitch=step===0?.15:.25;
+  const heelPitch=step+1===steps?0:-.17;
+  let pitch=0;
+  const toePivot=f.clone().multiplyScalar(toes).setY(-rest.get('foot.'+side).y);
+  const heelPivot=f.clone().multiplyScalar(-toes*.38).setY(toePivot.y);
+  if(supportPhase>=0&&supportPhase<swingStart&&!lastRoll){
+   pitch=toePitch*smooth(supportPhase/swingStart);
+   ankle.add(toePivot.clone().sub(toePivot.clone().applyAxisAngle(lateral,pitch)));
+  }else if(u>0&&u<1){
+   pitch=THREE.MathUtils.lerp(toePitch,heelPitch,smooth(u));
+   const pivotOffset=(pivot,angle)=>pivot.clone().sub(pivot.clone().applyAxisAngle(lateral,angle));
+   ankle.add(pivotOffset(toePivot,toePitch).lerp(pivotOffset(heelPivot,heelPitch),smooth(u)));
+   ankle.y+=lift*Math.sin(Math.PI*u)**2;
+  }else if(supportPhase>=1){
+   pitch=heelPitch*(1-smooth(THREE.MathUtils.clamp((supportPhase-1)/.18,0,1)));
+   ankle.add(heelPivot.clone().sub(heelPivot.clone().applyAxisAngle(lateral,pitch)));
+  }
   captureLegIK(side,ankle,f);
-  const pitch=.18*Math.sin(2*Math.PI*u)*clearance;
   for(let toe=1;toe<=5;toe++){
    const joint=getBone("toe"+toe+"-1."+side);
    if(joint)joint.quaternion.identity();
   }
   captureOrient(getBone('foot.'+side),new THREE.Quaternion().setFromAxisAngle(lateral,pitch));
+ }
+
+}
+
+function actingPose(mode,t,turn,f,up,across){
+ const pulse=(start,peak,end)=>THREE.MathUtils.smoothstep(t,start,peak)*(1-THREE.MathUtils.smoothstep(t,peak,end));
+ const envelope=THREE.MathUtils.smoothstep(t,0,.14)*(1-THREE.MathUtils.smoothstep(t,.8,1));
+ if(!envelope)return;
+ const breath=Math.sin(t*Math.PI*2*actingDurations[mode]/4000)*envelope;
+ const weight=.014*pulse(.04,.46,.96);
+ const listening=mode==="Listening";
+ const speaking=mode==="Speaking Gesture";
+ const angry=mode==="Restrained Anger"?pulse(.09,.52,.92):0;
+ const glance=listening?pulse(.56,.67,.77):speaking?pulse(.14,.23,.33):0;
+ const nod=listening?pulse(.30,.39,.46)+.48*pulse(.45,.51,.58):0;
+ const gesture=speaking?pulse(.22,.40,.56)+.53*pulse(.54,.64,.75):0;
+ captureTranslate(getBone('root'),across.clone().multiplyScalar(weight).addScaledVector(f,.012*angry).setY(-weight*.22));
+ for(const side of ["L","R"]){
+  const foot=motionBase.feet[side],bone=getBone('foot.'+side);
+  captureLegIK(side,foot.position);
+  captureOrient(bone,foot.orientation);
+ }
+ turn("spine04",-.8*breath-1.7*angry);
+ turn("spine05",-.5*breath);
+ turn("neck01",-1.1*nod+.8*angry);
+ turn("head",4.4*nod+2.8*angry);
+ turn("head",7*glance-3*gesture,up);
+ for(const side of ["L","R"])turn("eye."+side,-3.5*glance,up);
+ if(speaking){
+  turn("upperarm01.R",-18*gesture);
+  turn("lowerarm01.R",-35*gesture);
+  turn("wrist.R",8*gesture,f);
+  const phrasing=pulse(.14,.28,.47)+.75*pulse(.50,.61,.78);
+  turn("jaw",phrasing*(2.4+1.8*Math.sin(t*Math.PI*24)**2));
+ }
+ if(angry){
+  turn("shoulder01.L",3*angry,up);
+  turn("shoulder01.R",-3*angry,up);
+  turn("lowerarm01.L",-7*angry);
+  turn("lowerarm01.R",-7*angry);
  }
 }
 
@@ -3118,6 +3180,11 @@ function motionPose(t){
  posed.updateMatrixWorld(true);
  }
  posed.updateMatrixWorld(true);
+ if(Object.hasOwn(actingDurations,mode)){
+  actingPose(mode,t,turn,f,up,axis);
+  syncJoint();
+  return;
+ }
  const crouch=Math.sin(Math.PI*t);
  const grounded=mode==="Walk";
  if(true){
@@ -3130,8 +3197,12 @@ function motionPose(t){
  }
  }
  const pelvis=getBone("pelvis")||getBone("root")||bones[0];
- if(pelvis&&pelvis.parent){turn(pelvis.name,jump?0:twist*Math.sin(phase),up);turn(pelvis.name,jump?0:sway*Math.cos(phase),f);}
- for(const j of spineChain()){turn(j.name,jump?8*crouch/5:lean/5);turn(j.name,jump?0:-twist*Math.sin(phase)/5,up);}
+ const gaitBlend=grounded?THREE.MathUtils.smoothstep(t,0,.12)*(1-THREE.MathUtils.smoothstep(t,.84,1)):1;
+ if(pelvis&&pelvis.parent){
+  turn(pelvis.name,jump?0:twist*Math.sin(phase)*gaitBlend,up);
+  turn(pelvis.name,jump?0:sway*Math.cos(phase)*gaitBlend,f);
+ }
+ for(const j of spineChain()){turn(j.name,jump?8*crouch/5:lean/5);turn(j.name,jump?0:-twist*Math.sin(phase)*gaitBlend/5,up);}
  turn("neck01",jump?0:-lean*.35);turn("head",jump?0:-lean*.3);
  for(const side of ["L","R"]){
  const p=phase+(side==="R"?Math.PI:0),wave=Math.sin(p);
@@ -3144,9 +3215,9 @@ function motionPose(t){
   for(let toe=1;toe<=5;toe++)turn("toe"+toe+"-1."+side,jump?0:Math.max(0,Math.cos(p))*12);
  }
  if(grounded)turn("shoulder01."+side,wave*arm*.08,up);
- const swing=grounded?-wave*arm:wave*arm*limp;
+ const swing=grounded?-Math.sin(p-.12*Math.PI)*arm*gaitBlend:wave*arm*limp;
  shoulderAngle(side,jump?35*crouch:swing);
- elbowAngle(side,jump?20*crouch:elbow+Math.max(0,swing)*.25);
+ elbowAngle(side,jump?20*crouch:(elbow+Math.max(0,swing)*.25)*gaitBlend);
 
  turn("wrist."+side,jump?0:wave*4);
  }
@@ -3183,15 +3254,15 @@ function motionPose(t){
 }
 $("motionPlay").onclick=()=>{
  motionPause();if(!motionCapture()){$("motionStatus").textContent="Build skeleton first.";return;}
- const mode=$("motionPreset").value,duration=({"Run":650,"Jump":1400,"Flying Launch":2200,"Sit Down":1800,"Stand Up":1800,"Slow Walk":1700,"Brisk Walk":900,"Elderly Walk":1900,"Sneak Walk":1800,"Stealth Walk":1700,"March":1000,"Angry Walk":950,"Heavy Walk":1450,"Sad Walk":1550,"Royal Walk":1450,"Injured Walk":1600})[mode]||1200;
+ const mode=$("motionPreset").value,duration=actingDurations[mode]||({"Run":650,"Jump":1400,"Flying Launch":2200,"Sit Down":1800,"Stand Up":1800,"Slow Walk":1700,"Brisk Walk":900,"Elderly Walk":1900,"Sneak Walk":1800,"Stealth Walk":1700,"March":1000,"Angry Walk":950,"Heavy Walk":1450,"Sad Walk":1550,"Royal Walk":1450,"Injured Walk":1600})[mode]||1200;
  if(motionProgress>=1)motionProgress=0;
  let last=performance.now();
  function tick(now){
  if(!motionBase||motionBase.rig!==posed){motionPause();return;}
- const cycles=["Jump","Flying Launch","Sit Down","Stand Up"].includes(mode)?1:(Number($("motionSteps").value)||4)/2;
+ const cycles=singleMotions.has(mode)?1:(Number($("motionSteps").value)||4)/2;
  motionProgress=Math.min(1,motionProgress+(now-last)/(duration*cycles)*Number($("motionSpeed").value)/100);last=now;
  motionPose(motionProgress);$("motionTime").value=Math.round(motionProgress*100);
- if(motionProgress>=1){motionFrame=0;$("motionStatus").textContent=["Jump","Flying Launch","Sit Down","Stand Up"].includes(mode)?mode+" complete":mode+" complete: "+$("motionSteps").value+" steps";return;}
+ if(motionProgress>=1){motionFrame=0;$("motionStatus").textContent=singleMotions.has(mode)?mode+" complete":mode+" complete: "+$("motionSteps").value+" steps";return;}
  motionFrame=requestAnimationFrame(tick);
  }
  $("motionStatus").textContent="Playing "+mode;motionFrame=requestAnimationFrame(tick);
