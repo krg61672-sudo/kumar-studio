@@ -2940,6 +2940,85 @@ sync410();
 
 };
 
+
+// Guided visual regression tests: use the same inputs on both hands.
+const testPanel=document.createElement('details');
+testPanel.open=true;
+testPanel.innerHTML='<summary>Automatic Hand Testing</summary><button type="button" id="runHandTests">Run All Hand Tests</button><p id="handTestStatus">Build skeleton, then start tests.</p><button type="button" id="handTestLeft">View Left Hand</button><button type="button" id="handTestRight">View Right Hand</button><button type="button" id="handTestPass" disabled>PASS</button><button type="button" id="handTestFail" disabled>FAIL</button><button type="button" id="handTestStop">Stop / Restore Pose</button><pre id="handTestReport" style="white-space:pre-wrap"></pre>';
+document.querySelector('aside').prepend(testPanel);
+const handTests=[
+ ...['Thumb','Index','Middle','Ring','Little'].map((name,i)=>({name:name+' curl 100%',values:Array.from({length:7},(_,j)=>i===j?100:0)})),
+ ...['Closed Fist','Sword Grip','Spear Grip','Staff Grip','Bow Grip','Open Hand'].map(name=>({name,gesture:name})),
+ {name:'Finger Spread 100%',values:[0,0,0,0,0,100,0]}
+];
+let testIndex=-1,testResults=[],testSnapshot=null;
+function handTestView(side){
+ if(!posed||!testSnapshot||testSnapshot.rig!==posed)return;
+ posed.updateMatrixWorld(true);
+ const b=getBone('wrist.'+side), m=getBone(fingerName(side,3,1));
+ if(!b||!m)return;
+ const p=b.getWorldPosition(new THREE.Vector3()).lerp(m.getWorldPosition(new THREE.Vector3()),.65);
+ const distance=Math.max(.25,b.getWorldPosition(new THREE.Vector3()).distanceTo(m.getWorldPosition(new THREE.Vector3()))*4);
+ controls.target.copy(p);
+ camera.position.copy(p).add(new THREE.Vector3(distance*.35,distance*.25,distance));
+ controls.update();
+}
+function finishHandTests(){
+ const s=testSnapshot;
+ if(s&&s.rig===posed){
+  for(const side of ['L','R']){
+   handState[side]=s.states[side];
+   jointAdjust[side]=s.joints[side];
+   showHandValues(side);
+   for(const item of jointInputs[side]){
+    const v=jointAdjust[side][item.f-1][item.j-1];
+    item.input.value=v;item.output.textContent=v+'°';
+   }
+  }
+  bones.forEach((b,i)=>b.quaternion.copy(s.rotations[i]));
+  posed.updateMatrixWorld(true);syncJoint();
+ }
+ if(s){camera.position.copy(s.camera);controls.target.copy(s.target);controls.update();}
+ testSnapshot=null;testIndex=-1;
+ $('handTestPass').disabled=$('handTestFail').disabled=true;
+}
+function showHandTest(){
+ if(!testSnapshot||testSnapshot.rig!==posed){finishHandTests();$('handTestStatus').textContent='Skeleton changed. Restart tests.';return;}
+ if(testIndex>=handTests.length){finishHandTests();$('handTestStatus').textContent='Completed: '+testResults.filter(x=>x.endsWith('PASS')).length+'/'+handTests.length+' PASS. Original pose restored.';return;}
+ const t=handTests[testIndex];
+ for(const side of ['L','R']){
+  if(t.gesture)setGesture(side,t.gesture);
+  else{
+   clearJointAdjust(side);
+   Object.assign(handState[side],{mode:'normal',curl:t.values.slice(0,5),spread:t.values[5],opposition:t.values[6]});
+   showHandValues(side);applyHand(side);
+  }
+ }
+ $('handTestStatus').textContent=(testIndex+1)+'/'+handTests.length+' — '+t.name+' (compare both hands)';
+ handTestView('L');
+}
+$('runHandTests').onclick=async()=>{
+ if(testSnapshot)finishHandTests();
+ if(!posed)await $('buildRig').onclick();
+ if(!posed||restRig!==posed){$('handTestStatus').textContent='Skeleton unavailable';return;}
+ stop410();
+ testSnapshot={rig:posed,states:JSON.parse(JSON.stringify(handState)),joints:JSON.parse(JSON.stringify(jointAdjust)),rotations:bones.map(b=>b.quaternion.clone()),camera:camera.position.clone(),target:controls.target.clone()};
+ testResults=[];testIndex=0;$('handTestReport').textContent='';
+ $('handTestPass').disabled=$('handTestFail').disabled=false;
+ showHandTest();
+};
+function recordHandTest(result){
+ if(testIndex<0||!testSnapshot||testSnapshot.rig!==posed)return;
+ testResults.push(handTests[testIndex].name+': '+result);
+ $('handTestReport').textContent=testResults.join('\n');
+ testIndex++;showHandTest();
+}
+$('handTestPass').onclick=()=>recordHandTest('PASS');
+$('handTestFail').onclick=()=>recordHandTest('FAIL');
+$('handTestLeft').onclick=()=>handTestView('L');
+$('handTestRight').onclick=()=>handTestView('R');
+$('handTestStop').onclick=()=>{finishHandTests();$('handTestStatus').textContent='Stopped; original pose restored if skeleton unchanged.';};
+
 document.title="Kumar Studio V5.0";
 
 
