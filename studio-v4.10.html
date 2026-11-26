@@ -1,0 +1,339 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+content="width=device-width,initial-scale=1">
+<title>Kumar Studio V4.10</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+margin:0;
+background:#101827;
+color:#e8edf5;
+font:14px Arial,sans-serif;
+}
+header{
+padding:14px;
+background:#182335;
+border-bottom:1px solid #35445c;
+}
+h2{margin:0;color:#e8c478}
+main{
+display:flex;
+height:calc(100dvh - 65px);
+}
+aside{
+width:280px;
+overflow:auto;
+padding:12px;
+background:#182335;
+}
+iframe{
+flex:1;
+width:100%;
+border:0;
+background:#101827;
+}
+details{
+border:1px solid #35445c;
+border-radius:8px;
+padding:10px;
+margin-bottom:12px;
+}
+summary{
+cursor:pointer;
+font-weight:bold;
+color:#e8c478;
+}
+label{
+display:block;
+margin-top:12px;
+}
+select,button,input{
+width:100%;
+margin:5px 0;
+}
+select,button{
+padding:10px;
+color:white;
+background:#25354c;
+border:1px solid #42536d;
+border-radius:6px;
+}
+button{cursor:pointer}
+small{color:#aab7ca}
+#status{
+padding:10px;
+background:#25354c;
+border-radius:6px;
+}
+@media(max-width:700px){
+main{flex-direction:column}
+aside{width:100%;height:38%}
+iframe{height:62%}
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<h2>KUMAR STUDIO V4.10</h2>
+<small>Full Body & Combat Studio</small>
+</header>
+
+<main>
+
+<aside>
+
+<p id="status">
+Existing character studio loading...
+</p>
+
+<details open>
+<summary>Animation Mode</summary>
+
+<select id="mode">
+<option>Manual</option>
+<option>Automatic</option>
+<option>Hybrid</option>
+</select>
+
+</details>
+
+<details open>
+<summary>Full Body Controls</summary>
+
+<label>Body Region</label>
+
+<select id="region">
+<option>Full Body</option>
+<option>Head and Neck</option>
+<option>Face</option>
+<option>Spine and Chest</option>
+<option>Pelvis and Waist</option>
+<option>Left Arm</option>
+<option>Right Arm</option>
+<option>Left Hand</option>
+<option>Right Hand</option>
+<option>Left Leg</option>
+<option>Right Leg</option>
+<option>Left Foot and Toes</option>
+<option>Right Foot and Toes</option>
+</select>
+
+<small>
+Use the existing character studio
+for individual bone posing.
+</small>
+
+</details>
+
+<details open>
+<summary>Combat Animation</summary>
+
+<label>Animation</label>
+
+<select id="animation">
+<option>Jab</option>
+<option>Straight Punch</option>
+<option>Hook</option>
+<option>Uppercut</option>
+<option>Double Punch</option>
+<option>Front Kick</option>
+<option>Side Kick</option>
+<option>Roundhouse Kick</option>
+<option>Block</option>
+<option>Dodge</option>
+<option>Sword Attack</option>
+</select>
+
+<label>Attack Side</label>
+
+<select id="side">
+<option>Right</option>
+<option>Left</option>
+<option>Both</option>
+</select>
+
+<label>Speed <span id="speedValue">75%</span></label>
+<input id="speed" type="range"
+min="10" max="200" value="75">
+
+<label>Power <span id="powerValue">80%</span></label>
+<input id="power" type="range"
+min="0" max="100" value="80">
+
+<label>Reach <span id="reachValue">85%</span></label>
+<input id="reach" type="range"
+min="0" max="100" value="85">
+
+<label>Direction <span id="directionValue">0°</span></label>
+<input id="direction" type="range"
+min="-180" max="180" value="0">
+
+</details>
+
+<details>
+<summary>Facial Animation Settings</summary>
+
+<label>Emotion</label>
+
+<select id="emotion">
+<option>Neutral</option>
+<option>Angry</option>
+<option>Happy</option>
+<option>Sad</option>
+<option>Fear</option>
+<option>Pain</option>
+<option>Determined</option>
+<option>Cold</option>
+</select>
+
+<label>Intensity</label>
+<input id="intensity" type="range"
+min="0" max="100" value="50">
+
+<label>Maximum Jaw Opening</label>
+<input id="jaw" type="range"
+min="0" max="100" value="40">
+
+<label>Wrinkle Strength</label>
+<input id="wrinkles" type="range"
+min="0" max="100" value="50">
+
+<small>
+Facial engine integration pending.
+</small>
+
+</details>
+
+<button id="save">Save Animation Settings</button>
+<button id="reset">Reset Settings</button>
+
+</aside>
+
+<iframe
+id="studio"
+src="./studio-v4.9.3-fix.html"
+title="Kumar Character Studio">
+</iframe>
+
+</main>
+
+<script>
+"use strict";
+
+const $=id=>document.getElementById(id);
+
+const fields=[
+"mode","region","animation","side",
+"speed","power","reach","direction",
+"emotion","intensity","jaw","wrinkles"
+];
+
+const defaults={};
+
+for(const id of fields){
+defaults[id]=$(id).value;
+}
+
+function refresh(){
+
+for(const id of [
+"speed","power","reach","direction"
+]){
+
+$(id+"Value").textContent=
+$(id).value+
+(id==="direction"?"°":"%");
+
+}
+
+}
+
+for(const id of fields){
+$(id).addEventListener("input",refresh);
+}
+
+$("studio").addEventListener("load",()=>{
+
+$("status").textContent=
+"Character studio loaded. "+
+"Animation engine integration pending.";
+
+});
+
+$("save").onclick=()=>{
+
+const settings={};
+
+for(const id of fields){
+settings[id]=$(id).value;
+}
+
+try{
+
+localStorage.setItem(
+"kumar-v410-animation-settings",
+JSON.stringify(settings)
+);
+
+$("status").textContent=
+"Animation settings saved.";
+
+}catch(error){
+
+$("status").textContent=
+"Save failed: "+error.message;
+
+}
+
+};
+
+$("reset").onclick=()=>{
+
+for(const id of fields){
+$(id).value=defaults[id];
+}
+
+refresh();
+
+$("status").textContent=
+"Animation settings reset.";
+
+};
+
+try{
+
+const saved=JSON.parse(
+localStorage.getItem(
+"kumar-v410-animation-settings"
+)||"null"
+);
+
+if(saved){
+
+for(const id of fields){
+
+if(saved[id]!==undefined){
+$(id).value=saved[id];
+}
+
+}
+
+}
+
+}catch(error){
+console.warn(error);
+}
+
+refresh();
+
+</script>
+
+</body>
+</html>
