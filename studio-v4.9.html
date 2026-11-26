@@ -1,0 +1,481 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+content="width=device-width,initial-scale=1">
+<title>Kumar Studio V4.9</title>
+</head>
+<body style="background:#101827;color:white;font:16px Arial">
+<p id="loading">Loading Anatomical Joint Studio...</p>
+
+<script>
+async function start(){
+
+const response=await fetch('./studio-v4.8.html');
+
+if(!response.ok)
+throw Error('V4.8 unavailable');
+
+let html=await response.text();
+
+const anatomy=`
+
+function installAnatomy(){
+
+if(document.getElementById('anatomyPanel'))return;
+
+const panel=document.createElement('details');
+
+panel.id='anatomyPanel';
+panel.open=true;
+
+panel.innerHTML='<summary>ANATOMICAL JOINT STUDIO</summary>';
+
+const info=document.createElement('p');
+
+info.textContent=
+'Build official skeleton before using controls.';
+
+panel.appendChild(info);
+
+const restPositions=new Map();
+const axes=new Map();
+let activeRig=null;
+
+function findBone(name){
+return bones.find(b=>b.name===name);
+}
+
+function captureRest(){
+
+if(!posed)return false;
+
+if(activeRig===posed)return true;
+
+activeRig=posed;
+restPositions.clear();
+axes.clear();
+
+posed.updateMatrixWorld(true);
+
+for(const b of bones){
+
+const v=new THREE.Vector3();
+
+b.getWorldPosition(v);
+restPositions.set(b.name,v);
+}
+
+for(const input of panel.querySelectorAll('input')){
+input.value=0;
+}
+
+return true;
+}
+
+function direction(a,b){
+
+const p=restPositions.get(a);
+const q=restPositions.get(b);
+
+if(!p||!q)return null;
+
+return q.clone().sub(p).normalize();
+}
+
+function bendAxis(name,next,desired){
+
+const key=name+'|'+next;
+
+if(axes.has(key))
+return axes.get(key).clone();
+
+const dir=direction(name,next);
+
+if(!dir)return null;
+
+const target=desired.clone();
+
+target.addScaledVector(
+dir,-target.dot(dir)
+);
+
+if(target.lengthSq()<0.000001)
+return null;
+
+target.normalize();
+
+const axis=new THREE.Vector3()
+.crossVectors(dir,target)
+.normalize();
+
+axes.set(key,axis.clone());
+
+return axis;
+}
+
+function setBend(name,next,angle,target){
+
+const b=findBone(name);
+
+if(!b)return;
+
+const axis=bendAxis(name,next,target);
+
+if(!axis)return;
+
+b.quaternion.setFromAxisAngle(
+axis,
+THREE.MathUtils.degToRad(angle)
+);
+}
+
+function bodyForward(){
+
+const a=restPositions.get('foot.L');
+const b=restPositions.get('toe2-1.L');
+
+if(a&&b){
+
+const d=b.clone().sub(a);
+d.y=0;
+
+if(d.lengthSq()>0.000001)
+return d.normalize();
+}
+
+return new THREE.Vector3(0,0,1);
+}
+
+function elbow(side,value){
+
+const forward=bodyForward();
+
+setBend(
+'lowerarm01.'+side,
+'wrist.'+side,
+value,
+forward
+);
+}
+
+function knee(side,value){
+
+const backward=bodyForward()
+.multiplyScalar(-1);
+
+setBend(
+'lowerleg01.'+side,
+'foot.'+side,
+value,
+backward
+);
+}
+
+function shoulder(side,value){
+
+setBend(
+'upperarm01.'+side,
+'lowerarm01.'+side,
+value,
+new THREE.Vector3(0,1,0)
+);
+}
+
+function twist(side,value){
+
+const b=findBone('lowerarm02.'+side);
+
+if(!b)return;
+
+const axis=direction(
+'lowerarm02.'+side,
+'wrist.'+side
+);
+
+if(!axis)return;
+
+b.quaternion.setFromAxisAngle(
+axis,
+THREE.MathUtils.degToRad(value)
+);
+}
+
+function curl(side,value){
+
+const forward=bodyForward();
+
+for(let f=2;f<=5;f++){
+
+for(let j=1;j<=3;j++){
+
+const name='finger'+f+'-'+j+'.'+side;
+
+const next='finger'+f+'-'+(j+1)+'.'+side;
+
+const b=findBone(name);
+
+if(!b)continue;
+
+let dir=direction(name,next);
+
+if(!dir){
+
+dir=direction(
+'finger'+f+'-2.'+side,
+'finger'+f+'-3.'+side
+);
+}
+
+if(!dir)continue;
+
+const axis=new THREE.Vector3()
+.crossVectors(dir,forward);
+
+if(axis.lengthSq()<0.000001)
+continue;
+
+axis.normalize();
+
+b.quaternion.setFromAxisAngle(
+axis,
+THREE.MathUtils.degToRad(value)
+);
+}
+}
+}
+
+function addSlider(label,min,max,action){
+
+const title=document.createElement('label');
+
+const output=document.createElement('span');
+
+title.textContent=label+' ';
+output.textContent='0°';
+
+title.appendChild(output);
+
+const slider=document.createElement('input');
+
+slider.type='range';
+slider.min=min;
+slider.max=max;
+slider.step=1;
+slider.value=0;
+
+slider.oninput=()=>{
+
+if(!captureRest()){
+
+info.textContent=
+'Build Character Skeleton first.';
+
+return;
+}
+
+const value=Number(slider.value);
+
+output.textContent=value+'°';
+
+action(value);
+
+syncJoint();
+
+info.textContent=
+'Anatomical controls active';
+};
+
+panel.appendChild(title);
+panel.appendChild(slider);
+
+return {slider,output};
+}
+
+const controlsList=[];
+
+for(const side of ['L','R']){
+
+const label=side==='L'?'Left':'Right';
+
+const heading=document.createElement('h3');
+
+heading.textContent=label+' Arm';
+
+panel.appendChild(heading);
+
+controlsList.push(
+addSlider(
+label+' Shoulder Lift',
+0,130,
+v=>shoulder(side,v)
+)
+);
+
+controlsList.push(
+addSlider(
+label+' Elbow Bend',
+0,145,
+v=>elbow(side,v)
+)
+);
+
+controlsList.push(
+addSlider(
+label+' Forearm Twist',
+-85,85,
+v=>twist(side,v)
+)
+);
+
+controlsList.push(
+addSlider(
+label+' Finger Curl',
+0,90,
+v=>curl(side,v)
+)
+);
+}
+
+const legHeading=document.createElement('h3');
+
+legHeading.textContent='Leg Controls';
+
+panel.appendChild(legHeading);
+
+for(const side of ['L','R']){
+
+const label=side==='L'?'Left':'Right';
+
+controlsList.push(
+addSlider(
+label+' Knee Bend',
+0,135,
+v=>knee(side,v)
+)
+);
+}
+
+function resetAnatomy(){
+
+for(const item of controlsList){
+
+item.slider.value=0;
+item.output.textContent='0°';
+}
+
+}
+
+const reset=document.createElement('button');
+
+reset.textContent='Reset Anatomical Pose';
+
+reset.onclick=()=>{
+
+if(!posed)return;
+
+bones.forEach(
+b=>b.quaternion.identity()
+);
+
+resetAnatomy();
+
+for(const id of ['moveX','moveY','moveZ']){
+$(id).value=0;
+}
+
+moveCharacter();
+syncJoint();
+
+info.textContent='Pose reset';
+};
+
+panel.appendChild(reset);
+
+const oldReset=$('resetPose').onclick;
+
+$('resetPose').onclick=()=>{
+
+oldReset();
+resetAnatomy();
+
+};
+
+const oldBuild=$('buildRig').onclick;
+
+$('buildRig').onclick=async()=>{
+
+await oldBuild();
+
+activeRig=null;
+
+if(posed){
+
+captureRest();
+resetAnatomy();
+
+info.textContent=
+'163-bone anatomical controls ready';
+
+}
+};
+
+const manual=$('buildRig').closest('details');
+
+if(manual){
+manual.insertAdjacentElement('afterend',panel);
+}else{
+document.querySelector('aside').appendChild(panel);
+}
+
+}
+
+installAnatomy();
+
+`;
+
+const marker='renderer.setAnimationLoop(()=>{';
+
+const position=html.indexOf(
+"const oldHandler=html.indexOf("
+);
+
+if(position<0)
+throw Error('V4.8 source incompatible');
+
+const injection=
+"html=html.replace("+
+JSON.stringify(marker)+","+
+JSON.stringify(anatomy+"\n"+marker)+
+");\n";
+
+const writePoint=html.indexOf(
+"document.open();"
+);
+
+if(writePoint<0)
+throw Error('Studio loader not found');
+
+html=html.slice(0,writePoint)+
+injection+
+html.slice(writePoint);
+
+html=html.replaceAll('V4.8','V4.9');
+
+document.open();
+document.write(html);
+document.close();
+
+}
+
+start().catch(e=>{
+
+document.getElementById('loading')
+.textContent=e.message;
+
+});
+</script>
+</body>
+</html>
