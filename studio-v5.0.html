@@ -2944,13 +2944,19 @@ sync410();
 // Guided visual regression tests: use the same inputs on both hands.
 const testPanel=document.createElement('details');
 testPanel.open=true;
-testPanel.innerHTML='<summary>Automatic Hand Testing</summary><button type="button" id="runHandTests">Run All Hand Tests</button><p id="handTestStatus">Build skeleton, then start tests.</p><button type="button" id="handTestLeft">View Left Hand</button><button type="button" id="handTestRight">View Right Hand</button><button type="button" id="handTestPass" disabled>PASS</button><button type="button" id="handTestFail" disabled>FAIL</button><button type="button" id="handTestStop">Stop / Restore Pose</button><pre id="handTestReport" style="white-space:pre-wrap"></pre>';
+testPanel.innerHTML='<summary>Studio Testing Center</summary><select id="testMode"><option value="full">Full Studio Test</option><option value="quick">Quick Test</option><option value="hand">Hand Tests</option><option value="body">Body Tests</option><option value="animation">Animation Tests</option></select><button type="button" id="runHandTests">Run Selected Tests</button><p id="handTestStatus">Build skeleton, then start tests.</p><button type="button" id="handTestLeft">View Left Hand</button><button type="button" id="handTestRight">View Right Hand</button><button type="button" id="handTestPass" disabled>PASS</button><button type="button" id="handTestFail" disabled>FAIL</button><button type="button" id="handTestStop">Stop / Restore Pose</button><pre id="handTestReport" style="white-space:pre-wrap"></pre>';
 document.querySelector('aside').prepend(testPanel);
 const handTests=[
  ...['Thumb','Index','Middle','Ring','Little'].map((name,i)=>({name:name+' curl 100%',values:Array.from({length:7},(_,j)=>i===j?100:0)})),
  ...['Closed Fist','Sword Grip','Spear Grip','Staff Grip','Bow Grip','Open Hand'].map(name=>({name,gesture:name})),
  {name:'Finger Spread 100%',values:[0,0,0,0,0,100,0]}
 ];
+const bodyTests=[];
+for(const side of ["L","R"])for(const [label,bone,axis,angle] of [["Shoulder","upperarm01","z",35],["Elbow","lowerarm01","x",45],["Forearm","lowerarm02","y",45],["Wrist","wrist","x",30],["Hip","upperleg01","x",30],["Knee","lowerleg01","x",45],["Ankle","foot","x",20],["Toe","toe2-1","x",20]])bodyTests.push({name:side+" "+label,bone:bone+"."+side,axis,angle});
+for(const [name,bone,axis,angle] of [["Head turn","head","y",30],["Neck tilt","neck01","z",20],["Spine twist","spine05","y",90],["Spine bend","spine05","x",45],["Spine side bend","spine05","z",30]])bodyTests.push({name,bone,axis,angle});
+bodyTests.push({name:"Character translation",move:true},{name:"Skeleton overlay",overlay:true},{name:"Mesh finite vertex check",mesh:true});
+const animationTests=[{name:"Straight punch midpoint",punch:true}];
+let activeTests=handTests;
 let testIndex=-1,testResults=[],testSnapshot=null;
 function handTestView(side){
  if(!posed||!testSnapshot||testSnapshot.rig!==posed)return;
@@ -2966,6 +2972,11 @@ function handTestView(side){
 function finishHandTests(){
  const s=testSnapshot;
  if(s&&s.rig===posed){
+  stop410();snapshot410=s.animationSnapshot;character410=s.animationCharacter;
+  bones.forEach((b,i)=>b.position.copy(s.positions[i]));
+  ["moveX","moveY","moveZ"].forEach((id,i)=>$(id).value=s.movement[i]);
+  if(rigHelper)rigHelper.visible=s.overlay;
+  $("joint").value=s.joint;
   for(const side of ['L','R']){
    handState[side]=s.states[side];
    jointAdjust[side]=s.joints[side];
@@ -2984,8 +2995,23 @@ function finishHandTests(){
 }
 function showHandTest(){
  if(!testSnapshot||testSnapshot.rig!==posed){finishHandTests();$('handTestStatus').textContent='Skeleton changed. Restart tests.';return;}
- if(testIndex>=handTests.length){finishHandTests();$('handTestStatus').textContent='Completed: '+testResults.filter(x=>x.endsWith('PASS')).length+'/'+handTests.length+' PASS. Original pose restored.';return;}
- const t=handTests[testIndex];
+ if(testIndex>=activeTests.length){finishHandTests();$('handTestStatus').textContent='Completed: '+testResults.filter(x=>x.endsWith(': PASS')).length+'/'+activeTests.length+' PASS. Original pose restored.';return;}
+ const t=activeTests[testIndex];
+ bones.forEach((b,i)=>{b.quaternion.identity();b.position.copy(testSnapshot.positions[i]);});
+ if(rigHelper)rigHelper.visible=testSnapshot.overlay;
+ ["moveX","moveY","moveZ"].forEach(id=>$(id).value=0);moveCharacter();
+ for(const side of ["L","R"])setGesture(side,"Open Hand");
+ camera.position.copy(testSnapshot.camera);controls.target.copy(testSnapshot.target);controls.update();
+ if(t.bone||t.move||t.overlay||t.mesh||t.punch){
+  let note="Inspect movement and deformation";
+  if(t.bone){const b=getBone(t.bone);if(!b){recordHandTest("SKIP (bone unavailable)");return;} $("joint").value=b.name; if(selectedBone()!==b){const option=Array.from($("joint").options).find(o=>o.textContent.includes(b.name));if(option)$("joint").value=option.value;} if(selectedBone()===b){for(const axis of ["x","y","z"])$("r"+axis).value=axis===t.axis?t.angle:0;rotateJoint();}else{recordHandTest("SKIP (joint selector unavailable)");return;}}
+  if(t.move){$("moveX").value=0.2;moveCharacter();}
+  if(t.overlay&&rigHelper)rigHelper.visible=true;
+  if(t.punch){capture410();punch410(.5);note="Inspect punch midpoint";}
+  posed.updateMatrixWorld(true);
+  if(t.mesh){posed.skeleton.update();const v=new THREE.Vector3();let bad=0;for(let i=0;i<posed.geometry.attributes.position.count;i++){posed.getVertexPosition(i,v);if(![v.x,v.y,v.z].every(Number.isFinite))bad++;}recordHandTest(bad?"FAIL":"PASS");return;}
+  $("handTestStatus").textContent=(testIndex+1)+"/"+activeTests.length+" — "+t.name+" — "+note;return;
+ }
  for(const side of ['L','R']){
   if(t.gesture)setGesture(side,t.gesture);
   else{
@@ -2994,7 +3020,7 @@ function showHandTest(){
    showHandValues(side);applyHand(side);
   }
  }
- $('handTestStatus').textContent=(testIndex+1)+'/'+handTests.length+' — '+t.name+' (compare both hands)';
+ $('handTestStatus').textContent=(testIndex+1)+'/'+activeTests.length+' — '+t.name+' (compare both hands)';
  handTestView('L');
 }
 $('runHandTests').onclick=async()=>{
@@ -3002,14 +3028,15 @@ $('runHandTests').onclick=async()=>{
  if(!posed)await $('buildRig').onclick();
  if(!posed||restRig!==posed){$('handTestStatus').textContent='Skeleton unavailable';return;}
  stop410();
- testSnapshot={rig:posed,states:JSON.parse(JSON.stringify(handState)),joints:JSON.parse(JSON.stringify(jointAdjust)),rotations:bones.map(b=>b.quaternion.clone()),camera:camera.position.clone(),target:controls.target.clone()};
+ const mode=$("testMode").value;activeTests=mode==="hand"?handTests:mode==="body"?bodyTests:mode==="animation"?animationTests:mode==="quick"?[handTests[5],handTests[6],...bodyTests.filter(t=>t.name==="Spine twist"||t.name==="L Elbow"||t.mesh),...animationTests]:[...handTests,...bodyTests,...animationTests];
+ testSnapshot={rig:posed,states:JSON.parse(JSON.stringify(handState)),joints:JSON.parse(JSON.stringify(jointAdjust)),rotations:bones.map(b=>b.quaternion.clone()),positions:bones.map(b=>b.position.clone()),movement:["moveX","moveY","moveZ"].map(id=>$(id).value),overlay:rigHelper?.visible,joint:$("joint").value,animationSnapshot:snapshot410,animationCharacter:character410,camera:camera.position.clone(),target:controls.target.clone()};
  testResults=[];testIndex=0;$('handTestReport').textContent='';
  $('handTestPass').disabled=$('handTestFail').disabled=false;
  showHandTest();
 };
 function recordHandTest(result){
  if(testIndex<0||!testSnapshot||testSnapshot.rig!==posed)return;
- testResults.push(handTests[testIndex].name+': '+result);
+ testResults.push(activeTests[testIndex].name+': '+result);
  $('handTestReport').textContent=testResults.join('\n');
  testIndex++;showHandTest();
 }
