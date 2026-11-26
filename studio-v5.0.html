@@ -2016,7 +2016,7 @@ heading.textContent=label+' Body Controls';
 
 anatomyPanel.appendChild(heading);
 
-addControl(label+' Shoulder Lift',0,120,v=>{
+addControl(label+' Shoulder Lift (Back / Forward)',-50,120,v=>{
 
 shoulderAngle(side,v);
 elbowAngle(side,Number(anatomySliders[side==='L'?1:5]?.slider.value)||0);
