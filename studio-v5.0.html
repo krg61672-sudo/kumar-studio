@@ -3325,6 +3325,27 @@ $("bvhPlay").onclick=()=>{captureStop();if(!captureInit()){$("bvhStatus").textCo
 $("bvhPause").onclick=captureStop;$("bvhRestore").onclick=captureRestore;
 $("bvhTime").oninput=()=>{captureStop();if(captureInit()){captureTime=Number($("bvhTime").value)/1000*captureData.clip.duration;capturePose(captureTime);}};
 for(const id of ["motionPlay","resetPose","runHandTests","stanceNatural","stanceA"]){const old=$(id).onclick;$(id).onclick=()=>{captureRestore();return old?.();};}
+
+const seqPanel=document.createElement("details");seqPanel.open=true;
+seqPanel.innerHTML='<summary>Action Sequencer / Pose Library</summary><label>Action <select id="seqAction"></select></label><label>Duration (seconds) <input id="seqDuration" type="number" min=".25" max="60" step=".25" value="2"></label><button id="seqAdd">Add action</button><button id="seqSavePose">Capture current pose</button><div id="seqRows"></div><button id="seqPlay">Play sequence</button><button id="seqStop">Stop & restore</button><label>Timeline <input id="seqTime" type="range" min="0" max="1000" value="0"></label><p id="seqStatus">Experimental sequencing; existing motion quality is unchanged.</p>';
+document.querySelector("aside").prepend(seqPanel);
+const seqActions=$("seqAction"),seqItems=[],seqPoses=new Map();let seqBase=null,seqRAF=0,seqSerial=0;
+for(const name of ["Stand",...Array.from($("motionPreset").options,o=>o.value),"Recorded BVH"]){const o=document.createElement("option");o.value=o.textContent=name;seqActions.append(o);}
+function seqSnapshot(){return {rig:posed,q:bones.map(b=>b.quaternion.clone()),p:bones.map(b=>b.position.clone())};}
+function seqApply(s){if(!s||s.rig!==posed)return;for(let i=0;i<bones.length;i++){bones[i].quaternion.copy(s.q[i]);bones[i].position.copy(s.p[i]);}posed.updateMatrixWorld(true);}
+function seqStop(){if(seqRAF)cancelAnimationFrame(seqRAF);seqRAF=0;if(seqBase&&seqBase.rig===posed){seqApply(seqBase);syncJoint();}seqBase=null;motionBase=null;captureBase=null;}
+function seqRender(){const list=$("seqRows");list.replaceChildren();seqItems.forEach((item,i)=>{const row=document.createElement("div");const label=document.createElement("span");label.textContent=(i+1)+". "+item.name+" — "+item.duration+"s ";row.append(label);for(const [title,delta] of [["↑",-1],["↓",1],["Remove",0]]){const b=document.createElement("button");b.textContent=title;b.disabled=delta!==0&&(i+delta<0||i+delta>=seqItems.length);b.onclick=()=>{seqStop();if(delta===0)seqItems.splice(i,1);else [seqItems[i],seqItems[i+delta]]=[seqItems[i+delta],seqItems[i]];seqRender();};row.append(b);}list.append(row);});}
+$("seqAdd").onclick=()=>{seqStop();const duration=Number($("seqDuration").value);if(!Number.isFinite(duration)||duration<.25||duration>60)return;seqItems.push({name:seqActions.value,duration});seqRender();};
+$("seqSavePose").onclick=()=>{if(!posed||restRig!==posed)return;const name="Custom pose "+(++seqSerial);seqPoses.set(name,seqSnapshot());const o=document.createElement("option");o.value=o.textContent=name;seqActions.append(o);seqActions.value=name;$("seqStatus").textContent=name+" captured for this rig.";};
+function seqPrepare(){if(!posed||restRig!==posed||!seqItems.length)return false;if(seqBase&&seqBase.rig===posed)return true;motionRestore();captureRestore();stop410();if(testSnapshot)finishHandTests();seqBase=seqSnapshot();return true;}
+function seqSample(item,t,base){seqApply(base);if(item.name==="Stand")return seqSnapshot();if(seqPoses.has(item.name)){const p=seqPoses.get(item.name);if(p.rig===posed){const rootPos=bones[0].position.clone();seqApply(p);bones[0].position.copy(rootPos);posed.updateMatrixWorld(true);}return seqSnapshot();}
+if(item.name==="Recorded BVH"){if(!captureData)return seqSnapshot();captureBase=base;captureData.anchors=null;capturePose(t*captureData.clip.duration);captureBase=null;return seqSnapshot();}
+const old=$("motionPreset").value;$("motionPreset").value=item.name;motionBase=base;motionPose(t);motionBase=null;$("motionPreset").value=old;return seqSnapshot();}
+function seqPose(seconds){if(!seqBase||seqBase.rig!==posed)return;let base=seqBase,elapsed=0;for(const item of seqItems){const t=THREE.MathUtils.clamp((seconds-elapsed)/item.duration,0,1);const result=seqSample(item,t,base);if(seconds<=elapsed+item.duration){const blend=THREE.MathUtils.smoothstep(t*item.duration,0,Math.min(.25,item.duration*.5));for(let i=0;i<bones.length;i++){bones[i].quaternion.copy(base.q[i]).slerp(result.q[i],blend);bones[i].position.copy(base.p[i]).lerp(result.p[i],blend);}posed.updateMatrixWorld(true);syncJoint();return;}base=result;elapsed+=item.duration;}}
+const seqTotal=()=>seqItems.reduce((n,x)=>n+x.duration,0);
+$("seqPlay").onclick=()=>{if(seqRAF)cancelAnimationFrame(seqRAF);if(!seqPrepare()){$("seqStatus").textContent="Build skeleton and add actions first.";return;}const start=performance.now(),total=seqTotal();function frame(now){if(!seqBase||seqBase.rig!==posed){seqStop();return;}const t=Math.min(total,(now-start)/1000);seqPose(t);$("seqTime").value=Math.round(t/total*1000);if(t<total)seqRAF=requestAnimationFrame(frame);else seqRAF=0;}seqRAF=requestAnimationFrame(frame);};
+$("seqStop").onclick=seqStop;$("seqTime").oninput=()=>{if(seqRAF)cancelAnimationFrame(seqRAF);seqRAF=0;if(seqPrepare())seqPose(Number($("seqTime").value)/1000*seqTotal());};
+for(const id of ["motionPlay","bvhPlay","resetPose","runHandTests","stanceNatural","stanceA"]){const old=$(id).onclick;$(id).onclick=()=>{if(seqBase)seqStop();return old?.();};}
 document.title="Kumar Studio V5.0";
 
 
