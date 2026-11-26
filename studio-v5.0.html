@@ -3367,10 +3367,62 @@ for(const id of ["motionPlay","bvhPlay","resetPose","runHandTests","stanceNatura
 const blenderPanel=document.createElement("details");blenderPanel.open=true;
 blenderPanel.innerHTML='<summary>Blender Python Bridge</summary><button id="blenderExport">Export character rig (.glb)</button><label>Preview Blender output <input id="blenderImport" type="file" accept=".glb"></label><button id="blenderClear">Remove imported preview</button><p id="blenderStatus">Build skeleton before export. Blender processing is external.</p>';
 document.querySelector("aside").prepend(blenderPanel);
-let blenderPreview=null,blenderMixer=null;const blenderClock=new THREE.Clock();
+let blenderPreview=null,blenderMixer=null,blenderSkeleton=null;const blenderClock=new THREE.Clock();
 $("blenderExport").onclick=async()=>{try{if(!posed||restRig!==posed)throw Error("Build skeleton first.");const {GLTFExporter}=await import("three/addons/exporters/GLTFExporter.js");posed.updateMatrixWorld(true);const result=await new GLTFExporter().parseAsync(posed,{binary:true,onlyVisible:false});const url=URL.createObjectURL(new Blob([result],{type:"model/gltf-binary"}));const a=document.createElement("a");a.href=url;a.download="kumar-character.glb";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);$("blenderStatus").textContent="Character rig exported.";}catch(e){$("blenderStatus").textContent=e.message;}};
-$("blenderClear").onclick=()=>{if(blenderPreview)scene.remove(blenderPreview);blenderPreview=null;blenderMixer=null;};
-$("blenderImport").onchange=async()=>{try{const file=$("blenderImport").files[0];if(!file)return;const {GLTFLoader}=await import("three/addons/loaders/GLTFLoader.js");const result=await new GLTFLoader().parseAsync(await file.arrayBuffer(),"");$("blenderClear").click();blenderPreview=result.scene;blenderPreview.position.x=2;scene.add(blenderPreview);blenderMixer=new THREE.AnimationMixer(blenderPreview);if(result.animations.length)blenderMixer.clipAction(result.animations[0]).play();$("blenderStatus").textContent="Preview loaded: "+result.animations.length+" animation clips.";}catch(e){$("blenderStatus").textContent=e.message;}};
+function clearBlenderPreview(){
+ if(blenderPreview)scene.remove(blenderPreview);
+ if(blenderSkeleton){
+  scene.remove(blenderSkeleton);
+  blenderSkeleton.dispose();
+ }
+ if(blenderMixer)blenderMixer.uncacheRoot(blenderPreview);
+ blenderPreview=null;blenderMixer=null;blenderSkeleton=null;
+}
+$("blenderClear").onclick=()=>{
+ clearBlenderPreview();
+ $("blenderImport").value="";
+ $("blenderStatus").textContent="Imported preview cleared.";
+};
+$("blenderImport").onchange=async()=>{
+ const input=$("blenderImport"),file=input.files[0];
+ if(!file)return;
+ try{
+  const {GLTFLoader}=await import("three/addons/loaders/GLTFLoader.js");
+  const result=await new GLTFLoader().parseAsync(await file.arrayBuffer(),"");
+  if(input.files[0]!==file)return;
+  clearBlenderPreview();
+  blenderPreview=result.scene;
+  blenderPreview.position.x=2;
+  scene.add(blenderPreview);
+  let hasMesh=false;
+  const joints=[];
+  blenderPreview.traverse(object=>{
+   if(object.isMesh)hasMesh=true;
+   if(object.isBone)joints.push(object);
+  });
+  blenderMixer=new THREE.AnimationMixer(blenderPreview);
+  if(result.animations.length){
+   blenderMixer.clipAction(result.animations[0]).play();
+   blenderMixer.setTime(0);
+  }
+  if(joints.length&&!hasMesh){
+   blenderPreview.position.set(0,0,0);
+   blenderPreview.updateMatrixWorld(true);
+   const bounds=new THREE.Box3().setFromPoints(joints.map(captureWorld));
+   const size=bounds.getSize(new THREE.Vector3());
+   const center=bounds.getCenter(new THREE.Vector3());
+   const scale=size.y>1e-6?1.65/size.y:1;
+   blenderPreview.scale.setScalar(scale);
+   blenderPreview.position.set(.95-center.x*scale,-bounds.min.y*scale,-center.z*scale);
+   blenderSkeleton=new THREE.SkeletonHelper(blenderPreview);
+   blenderSkeleton.frustumCulled=false;
+   scene.add(blenderSkeleton);
+  }
+  $("blenderStatus").textContent=(blenderSkeleton?"Skeleton preview":"Preview")+" loaded: "+result.animations.length+" animation clips.";
+ }catch(e){
+  if(input.files[0]===file)$("blenderStatus").textContent=e.message;
+ }
+};
 document.title="Kumar Studio V5.0";
 
 
