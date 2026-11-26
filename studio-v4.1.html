@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kumar Studio V4.1</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#10131c;color:white;font-family:Arial}
+header{padding:15px;background:#191e2c;color:#e8c477;font-size:22px;font-weight:bold}
+main{display:flex;height:calc(100dvh - 56px)}
+#panel{width:240px;overflow:auto;background:#191e2c;padding:14px}
+#view{flex:1;min-width:0}
+h3{color:#e8c477}
+button,input{width:100%;margin:7px 0}
+button{background:#30394d;color:white;border:1px solid #596278;padding:12px;border-radius:6px}
+label{font-size:13px}
+canvas{display:block}
+#status{font-size:12px;color:#e8c477}
+</style>
+<script type="importmap">
+{"imports":{
+"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+"three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+</head>
+<body>
+<header>KUMAR STUDIO V4.1</header>
+<main>
+<div id="panel">
+<h3>HUMAN CREATOR</h3>
+<input type="file" id="file" accept=".obj">
+<p id="status">Import base.obj</p>
+<h3>BODY SETTINGS</h3>
+<label>Height</label>
+<input id="height" type="range" min="0.8" max="1.2" step="0.01" value="1">
+<label>Body Width</label>
+<input id="width" type="range" min="0.7" max="1.4" step="0.01" value="1">
+<label>Body Depth</label>
+<input id="depth" type="range" min="0.7" max="1.4" step="0.01" value="1">
+<label>Skin Colour</label>
+<input id="skin" type="color" value="#c69b80">
+<h3>CAMERA</h3>
+<button id="front">Front View</button>
+<button id="back">Back View</button>
+<button id="side">Side View</button>
+<button id="face">Face Close-up</button>
+<button id="reset">Reset Body</button>
+</div>
+<div id="view"></div>
+</main>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {OBJLoader} from 'three/addons/loaders/OBJLoader.js';
+
+const $=id=>document.getElementById(id);
+const view=$('view');
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x10131c);
+
+const camera=new THREE.PerspectiveCamera(40,1,0.01,100);
+camera.position.set(0,1,4);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+view.appendChild(renderer.domElement);
+
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0,0.9,0);
+controls.enableDamping=true;
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x555566,2));
+
+const light=new THREE.DirectionalLight(0xffffff,3);
+light.position.set(3,5,4);
+scene.add(light);
+
+scene.add(new THREE.GridHelper(10,20));
+
+const actor=new THREE.Group();
+scene.add(actor);
+
+const material=new THREE.MeshStandardMaterial({
+color:0xc69b80,
+roughness:0.75,
+side:THREE.DoubleSide
+});
+
+let model;
+
+$('file').onchange=async e=>{
+const file=e.target.files[0];
+if(!file)return;
+$('status').textContent='Loading mesh...';
+try{
+const source=await file.text();
+let group='';
+let bodyFound=false;
+const lines=source.split(/\r?\n/);
+const filtered=lines.filter(line=>{
+const t=line.trim();
+if(t.startsWith('g ')){
+group=t.slice(2).trim();
+if(group==='body')bodyFound=true;
+}
+if(t.startsWith('f '))return group==='body';
+return true;
+});
+if(!bodyFound)throw new Error('Body group not found');
+const next=new OBJLoader().parse(filtered.join('\n'));
+next.traverse(o=>{
+if(o.isMesh){
+o.material=material;
+o.geometry.computeVertexNormals();
+}
+});
+const box=new THREE.Box3().setFromObject(next);
+const size=box.getSize(new THREE.Vector3());
+const center=box.getCenter(new THREE.Vector3());
+if(!Number.isFinite(size.y)||size.y<=0)
+throw new Error('Invalid mesh');
+const s=1.8/size.y;
+next.scale.setScalar(s);
+next.position.set(-center.x*s,-box.min.y*s,-center.z*s);
+if(model)actor.remove(model);
+model=next;
+actor.add(model);
+$('status').textContent='Human mesh ready';
+}catch(err){
+$('status').textContent=err.message;
+}
+};
+
+function updateBody(){
+actor.scale.set(+$('width').value,+$('height').value,+$('depth').value);
+}
+['height','width','depth'].forEach(id=>{
+$(id).oninput=updateBody;
+});
+
+$('skin').oninput=e=>material.color.set(e.target.value);
+
+function setView(x,y,z,targetY){
+camera.position.set(x,y,z);
+controls.target.set(0,targetY,0);
+controls.update();
+}
+
+$('front').onclick=()=>setView(0,1,4,0.9);
+$('back').onclick=()=>setView(0,1,-4,0.9);
+$('side').onclick=()=>setView(4,1,0,0.9);
+$('face').onclick=()=>setView(0,1.65,0.65,1.65);
+
+$('reset').onclick=()=>{
+['height','width','depth'].forEach(id=>$(id).value=1);
+updateBody();
+setView(0,1,4,0.9);
+};
+
+function resize(){
+const w=view.clientWidth;
+const h=view.clientHeight;
+renderer.setSize(w,h);
+camera.aspect=w/Math.max(h,1);
+camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(view);
+resize();
+
+function animate(){
+requestAnimationFrame(animate);
+controls.update();
+renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+</html>
