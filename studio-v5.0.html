@@ -3046,6 +3046,77 @@ $('handTestLeft').onclick=()=>handTestView('L');
 $('handTestRight').onclick=()=>handTestView('R');
 $('handTestStop').onclick=()=>{finishHandTests();$('handTestStatus').textContent='Stopped; original pose restored if skeleton unchanged.';};
 
+
+const locomotionPanel=document.createElement("details");
+locomotionPanel.open=true;
+locomotionPanel.innerHTML='<summary>V5.1 Motion Presets</summary><select id="motionPreset"><option>Walk</option><option>Run</option><option>Jump</option></select><label>Speed <input id="motionSpeed" type="range" min="25" max="200" value="100"></label><label>Timeline <input id="motionTime" type="range" min="0" max="100" value="0"></label><button id="motionPlay">Play</button><button id="motionPause">Pause</button><button id="motionRestore">Restore Base Pose</button><p id="motionStatus">Build skeleton first.</p>';
+document.querySelector("aside").appendChild(locomotionPanel);
+let motionBase=null,motionFrame=0,motionProgress=0;
+function motionPause(){if(motionFrame)cancelAnimationFrame(motionFrame);motionFrame=0;}
+function motionRestore(){
+ motionPause();
+ if(motionBase&&motionBase.rig===posed){bones.forEach((b,i)=>{b.quaternion.copy(motionBase.q[i]);b.position.copy(motionBase.p[i]);});posed.updateMatrixWorld(true);syncJoint();}
+ motionBase=null;motionProgress=0;$("motionTime").value=0;
+}
+function motionCapture(){
+ if(!posed||restRig!==posed)return false;
+ if(testSnapshot)finishHandTests();
+ stop410();
+ if(!motionBase||motionBase.rig!==posed)motionBase={rig:posed,q:bones.map(b=>b.quaternion.clone()),p:bones.map(b=>b.position.clone())};
+ return true;
+}
+function motionPose(t){
+ if(!motionBase||motionBase.rig!==posed)return;
+ bones.forEach((b,i)=>{b.quaternion.copy(motionBase.q[i]);b.position.copy(motionBase.p[i]);});
+ const mode=$("motionPreset").value,run=mode==="Run",jump=mode==="Jump";
+ const phase=t*Math.PI*2;
+ const f=forward().clone();f.y=0;if(f.lengthSq()<1e-8)f.set(0,0,1);f.normalize();
+ const axis=new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0),f).normalize();
+ function turn(name,degrees){
+ const b=getBone(name);if(!b)return;
+ const localAxis=axis.clone().applyQuaternion(b.parent.getWorldQuaternion(new THREE.Quaternion()).invert());
+ b.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(localAxis,THREE.MathUtils.degToRad(degrees)));
+ posed.updateMatrixWorld(true);
+ }
+ posed.updateMatrixWorld(true);
+ for(const side of ["L","R"]){
+ const wave=Math.sin(phase+(side==="R"?Math.PI:0));
+ const crouch=Math.sin(Math.PI*t);
+ turn("upperleg01."+side,jump?-35*crouch:wave*(run?40:23));
+ turn("lowerleg01."+side,jump?65*crouch:Math.max(0,-wave)*(run?75:40));
+ turn("upperarm01."+side,jump?35*crouch:-wave*(run?35:18));
+ turn("lowerarm01."+side,jump?20*crouch:run?45:12);
+ }
+ const height=jump?Math.sin(Math.PI*t)*.28:Math.abs(Math.sin(phase))*(run?.045:.018);
+ bones[0].position.y+=height;
+ posed.updateMatrixWorld(true);syncJoint();
+}
+$("motionPlay").onclick=()=>{
+ motionPause();if(!motionCapture()){$("motionStatus").textContent="Build skeleton first.";return;}
+ const mode=$("motionPreset").value,duration=mode==="Run"?650:mode==="Jump"?1000:1200;
+ if(motionProgress>=1)motionProgress=0;
+ let last=performance.now();
+ function tick(now){
+ if(!motionBase||motionBase.rig!==posed){motionPause();return;}
+ motionProgress+=(now-last)/duration*Number($("motionSpeed").value)/100;last=now;
+ if(mode==="Jump")motionProgress=Math.min(1,motionProgress);else motionProgress%=1;
+ motionPose(motionProgress);$("motionTime").value=Math.round(motionProgress*100);
+ if(mode==="Jump"&&motionProgress>=1){motionFrame=0;$("motionStatus").textContent="Jump complete";return;}
+ motionFrame=requestAnimationFrame(tick);
+ }
+ $("motionStatus").textContent="Playing "+mode;motionFrame=requestAnimationFrame(tick);
+};
+$("motionPause").onclick=()=>{motionPause();$("motionStatus").textContent="Paused";};
+$("motionRestore").onclick=()=>{motionRestore();$("motionStatus").textContent="Base pose restored";};
+$("motionTime").oninput=()=>{motionPause();if(motionCapture()){motionProgress=Number($("motionTime").value)/100;motionPose(motionProgress);}};
+$("motionPreset").onchange=()=>{motionRestore();};
+const priorMotionTest=$("runHandTests").onclick;
+$("runHandTests").onclick=()=>{motionRestore();return priorMotionTest();};
+const priorMotionPunch=play410.onclick;
+play410.onclick=()=>{motionRestore();return priorMotionPunch();};
+const priorMotionReset=$("resetPose").onclick;
+$("resetPose").onclick=()=>{motionRestore();return priorMotionReset();};
+
 document.title="Kumar Studio V5.0";
 
 
