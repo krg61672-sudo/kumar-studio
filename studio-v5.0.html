@@ -1211,10 +1211,12 @@ posed.updateMatrixWorld(true);
 
 for(const b of bones){
 
-rest.set(
-b.name,
-b.getWorldPosition(new THREE.Vector3())
-);
+// Read immutable bind-pose coordinates, never the currently posed skeleton.
+const index=posed.skeleton.bones.indexOf(b);
+const inverse=posed.skeleton.boneInverses[index];
+rest.set(b.name,inverse
+ ? new THREE.Vector3().setFromMatrixPosition(inverse.clone().invert())
+ : b.getWorldPosition(new THREE.Vector3()));
 
 }
 
