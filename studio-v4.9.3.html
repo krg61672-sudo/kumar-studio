@@ -1,0 +1,505 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+content="width=device-width,initial-scale=1">
+<title>Kumar Studio V4.9.3</title>
+</head>
+
+<body style="background:#101827;color:white;font:16px Arial">
+
+<p id="loading">
+Loading Advanced Hand and Archery Studio...
+</p>
+
+<script>
+async function start(){
+
+async function read(file){
+
+const r=await fetch(file,{
+cache:'no-cache'
+});
+
+if(!r.ok)
+throw Error(file+' unavailable');
+
+return await r.text();
+
+}
+
+let source=await read('./studio-v4.9.1.html');
+
+const v2=await read('./studio-v4.9.2.html');
+
+function replaceExact(oldText,newText){
+
+if(!source.includes(oldText))
+throw Error(
+'Source mismatch: '+oldText.slice(0,60)
+);
+
+source=source.replace(
+oldText,()=>newText
+);
+
+}
+
+const marker='const thumbCode=`';
+
+const a=v2.indexOf(marker);
+
+const b=v2.indexOf('`;',a+marker.length);
+
+if(a<0||b<0)
+throw Error('V4.9.2 thumb source missing');
+
+let thumb=v2.slice(
+a+marker.length,b
+);
+
+thumb=thumb.replace(
+'const opposition=THREE.MathUtils.clamp(',
+'const fistMode=state.mode==="fist";\n'+
+'const opposition=THREE.MathUtils.clamp('
+);
+
+thumb=thumb.replace(
+'.multiplyScalar(0.72)\n.addScaledVector(worldAlong,0.55)\n.addScaledVector(worldNormal,0.48)',
+'.multiplyScalar(fistMode?0.28:0.72)\n'+
+'.addScaledVector(worldAlong,fistMode?0.85:0.55)\n'+
+'.addScaledVector(worldNormal,fistMode?0.38:0.48)'
+);
+
+thumb=thumb.replace(
+'.lerp(middlePoint,0.38);',
+'.lerp(middlePoint,fistMode?0:0.38);'
+);
+
+thumb=thumb.replace(
+'Math.max(len2*0.45,0.002)',
+'Math.max(len2*(fistMode?0.65:0.45),0.002)'
+);
+
+thumb=thumb.replace(
+'desired.lerp(\ngripDirection,0.25\n)',
+'desired.lerp(\ngripDirection,fistMode?0:0.25\n)'
+);
+
+thumb=thumb.replace(
+'.multiplyScalar(0.8)\n.addScaledVector(worldNormal,-0.45)\n.addScaledVector(worldAlong,0.15)',
+'.multiplyScalar(fistMode?0.35:0.8)\n'+
+'.addScaledVector(worldNormal,fistMode?-0.25:-0.45)\n'+
+'.addScaledVector(worldAlong,fistMode?0.65:0.15)'
+);
+
+const startThumb=source.indexOf(
+'const thumbCurl=state.curl[0]/100;'
+);
+
+const endThumb=source.indexOf(
+'posed.updateMatrixWorld(true);',
+startThumb
+);
+
+if(startThumb<0||endThumb<0)
+throw Error('Thumb section missing');
+
+source=source.slice(0,startThumb)+
+thumb+
+source.slice(endThumb);
+
+replaceExact(
+"'Closed Fist':[65,100,100,100,100,0,85]",
+"'Closed Fist':[70,100,100,100,100,0,85]"
+);
+
+replaceExact(
+'const handInputs={L:[],R:[]};',
+`
+const handInputs={L:[],R:[]};
+
+handState.L.mode='normal';
+handState.R.mode='normal';
+
+const jointAdjust={
+L:Array.from({length:5},()=>[0,0,0]),
+R:Array.from({length:5},()=>[0,0,0])
+};
+
+const jointInputs={L:[],R:[]};
+
+function clearJointAdjust(side){
+
+for(const row of jointAdjust[side])
+row.fill(0);
+
+for(const item of jointInputs[side]){
+
+item.input.value=0;
+item.output.textContent='0°';
+
+}
+
+}
+`
+);
+
+replaceExact(
+'const g=gestures[name];',
+`
+const g=gestures[name];
+
+handState[side].mode=
+name==='Closed Fist'?'fist':'normal';
+
+clearJointAdjust(side);
+`
+);
+
+replaceExact(
+'s.curl=[v*0.65,v,v,v,v];',
+`
+s.mode='fist';
+
+s.curl=[v*0.70,v,v,v,v];
+`
+);
+
+replaceExact(
+'const s=handState[side];\n\ns.curl=[\nv*0.50,',
+`
+const s=handState[side];
+
+s.mode='normal';
+
+s.curl=[
+v*0.50,
+`
+);
+
+replaceExact(
+"'Cultivation Seal':[60,0,0,100,100,0,75]",
+`
+'Cultivation Seal':[60,0,0,100,100,0,75],
+
+'Arrow - Single Hold':[35,30,85,95,95,0,45],
+
+'Arrow - Two Hold':[40,35,40,90,90,8,50],
+
+'Arrow - Three Hold':[45,40,45,50,90,12,55],
+
+'Arrow - Multiple Hold':[50,55,60,65,70,5,60],
+
+'Arrow - Thumb Index Hold':[35,35,100,100,100,0,45],
+
+'Arrow - Index Middle Hold':[15,35,35,90,95,12,20],
+
+'Arrow - Reverse Hold':[40,55,75,85,90,0,50],
+
+'Arrow - Horizontal Hold':[35,45,65,90,95,0,45],
+
+'Arrow - Vertical Hold':[45,50,70,85,90,5,55],
+
+'Arrow - Quiver Pickup':[25,25,40,65,75,10,35],
+
+'Arrow - Loading':[30,25,55,80,90,10,40],
+
+'Arrow - Two Finger Draw':[20,45,45,90,95,8,25],
+
+'Arrow - Three Finger Draw':[20,45,50,55,95,5,25],
+
+'Arrow - Thumb Draw':[65,65,90,95,95,0,70],
+
+'Arrow - Pinch Grip':[30,30,90,95,95,0,45],
+
+'Arrow - Release':[5,10,10,20,25,20,5],
+
+'Arrow - Spiritual Summoning':[15,15,20,35,45,45,15],
+
+'Arrow - Divine Control':[55,0,0,90,95,5,65],
+
+'Arrow - Floating Gesture':[10,5,15,25,35,55,10],
+
+'Arrow - Custom Grip':[0,0,0,0,0,0,0]
+`
+);
+
+replaceExact(
+'posed.updateMatrixWorld(true);\n\nsyncJoint();',
+`
+for(let f=1;f<=5;f++){
+
+for(let j=1;j<=3;j++){
+
+const adjustment=
+jointAdjust[side][f-1][j-1];
+
+if(!adjustment)continue;
+
+const bone=getBone(
+fingerName(side,f,j)
+);
+
+if(!bone)continue;
+
+let axis;
+
+if(f===1){
+
+const d=direction(
+fingerName(side,1,1),
+fingerName(side,1,2)
+);
+
+if(!d)continue;
+
+axis=new THREE.Vector3()
+.crossVectors(d,frame.normal);
+
+}else{
+
+axis=fingerAxis(side,f,frame);
+
+}
+
+if(!axis||
+axis.lengthSq()<0.000001)
+continue;
+
+const q=new THREE.Quaternion()
+.setFromAxisAngle(
+axis.normalize(),
+rad(adjustment)
+);
+
+bone.quaternion.multiply(q);
+
+}
+
+}
+
+posed.updateMatrixWorld(true);
+
+syncJoint();
+`
+);
+
+replaceExact(
+'anatomyPanel.appendChild(resetHand);',
+`
+anatomyPanel.appendChild(resetHand);
+
+const advanced=document.createElement('details');
+
+advanced.innerHTML=
+'<summary>Custom Finger Joint Editor</summary>';
+
+anatomyPanel.appendChild(advanced);
+
+for(let f=1;f<=5;f++){
+
+const heading=document.createElement('h4');
+
+heading.textContent=handNames[f-1];
+
+advanced.appendChild(heading);
+
+for(let j=1;j<=3;j++){
+
+const label=document.createElement('label');
+
+const output=document.createElement('span');
+
+label.textContent='Joint '+j+' : ';
+
+output.textContent='0°';
+
+label.appendChild(output);
+
+const input=document.createElement('input');
+
+input.type='range';
+input.min=-45;
+input.max=45;
+input.step=1;
+input.value=0;
+input.style.width='100%';
+
+input.oninput=()=>{
+
+if(!posed||restRig!==posed){
+
+input.value=0;
+return;
+
+}
+
+jointAdjust[side][f-1][j-1]=
+Number(input.value);
+
+output.textContent=input.value+'°';
+
+applyHand(side);
+
+};
+
+advanced.appendChild(label);
+advanced.appendChild(input);
+
+jointInputs[side].push({
+input,output,f,j
+});
+
+}
+
+}
+
+const resetJoints=document.createElement('button');
+
+resetJoints.textContent='Reset Joint Adjustments';
+
+resetJoints.onclick=()=>{
+
+clearJointAdjust(side);
+
+applyHand(side);
+
+};
+
+advanced.appendChild(resetJoints);
+
+const saveGrip=document.createElement('button');
+
+saveGrip.textContent='Save Custom Grip';
+
+saveGrip.onclick=()=>{
+
+if(!posed||restRig!==posed)return;
+
+const data={
+state:handState[side],
+joints:jointAdjust[side]
+};
+
+try{
+
+localStorage.setItem(
+'kumar-custom-grip-'+side,
+JSON.stringify(data)
+);
+
+anatomyStatus.textContent=
+label+' Custom Grip Saved';
+
+}catch(e){
+
+anatomyStatus.textContent=
+'Save failed: '+e.message;
+
+}
+
+};
+
+advanced.appendChild(saveGrip);
+
+const loadGrip=document.createElement('button');
+
+loadGrip.textContent='Load Custom Grip';
+
+loadGrip.onclick=()=>{
+
+if(!posed||restRig!==posed)return;
+
+try{
+
+const raw=localStorage.getItem(
+'kumar-custom-grip-'+side
+);
+
+if(!raw){
+
+anatomyStatus.textContent=
+'No saved custom grip';
+
+return;
+
+}
+
+const data=JSON.parse(raw);
+
+handState[side]=data.state;
+
+jointAdjust[side]=data.joints;
+
+showHandValues(side);
+
+for(const item of jointInputs[side]){
+
+const v=jointAdjust[side]
+[item.f-1][item.j-1];
+
+item.input.value=v;
+
+item.output.textContent=v+'°';
+
+}
+
+applyHand(side);
+
+anatomyStatus.textContent=
+label+' Custom Grip Loaded';
+
+}catch(e){
+
+anatomyStatus.textContent=
+'Load failed: '+e.message;
+
+}
+
+};
+
+advanced.appendChild(loadGrip);
+`
+);
+
+replaceExact(
+'function resetSliders(){',
+'function resetSliders(){'+
+'\\nfor(const side of ["L","R"]){'+
+'\\nhandState[side].mode="normal";'+
+'\\nclearJointAdjust(side);'+
+'\\n}\\n'
+);
+
+source=source.replaceAll(
+'V4.9.1 Advanced Hand Studio',
+'V4.9.3 Hand and Archery Studio'
+);
+
+source=source.replaceAll(
+'Advanced Hand Studio Ready',
+'Hand and Archery Studio Ready'
+);
+
+document.open();
+document.write(source);
+document.close();
+
+}
+
+start().catch(e=>{
+
+const status=
+document.getElementById('loading');
+
+if(status)
+status.textContent='Error: '+e.message;
+
+});
+
+</script>
+</body>
+</html>
