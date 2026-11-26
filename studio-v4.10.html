@@ -6,334 +6,662 @@
 <meta name="viewport"
 content="width=device-width,initial-scale=1">
 <title>Kumar Studio V4.10</title>
-
-<style>
-*{box-sizing:border-box}
-body{
-margin:0;
-background:#101827;
-color:#e8edf5;
-font:14px Arial,sans-serif;
-}
-header{
-padding:14px;
-background:#182335;
-border-bottom:1px solid #35445c;
-}
-h2{margin:0;color:#e8c478}
-main{
-display:flex;
-height:calc(100dvh - 65px);
-}
-aside{
-width:280px;
-overflow:auto;
-padding:12px;
-background:#182335;
-}
-iframe{
-flex:1;
-width:100%;
-border:0;
-background:#101827;
-}
-details{
-border:1px solid #35445c;
-border-radius:8px;
-padding:10px;
-margin-bottom:12px;
-}
-summary{
-cursor:pointer;
-font-weight:bold;
-color:#e8c478;
-}
-label{
-display:block;
-margin-top:12px;
-}
-select,button,input{
-width:100%;
-margin:5px 0;
-}
-select,button{
-padding:10px;
-color:white;
-background:#25354c;
-border:1px solid #42536d;
-border-radius:6px;
-}
-button{cursor:pointer}
-small{color:#aab7ca}
-#status{
-padding:10px;
-background:#25354c;
-border-radius:6px;
-}
-@media(max-width:700px){
-main{flex-direction:column}
-aside{width:100%;height:38%}
-iframe{height:62%}
-}
-</style>
 </head>
 
-<body>
-
-<header>
-<h2>KUMAR STUDIO V4.10</h2>
-<small>Full Body & Combat Studio</small>
-</header>
-
-<main>
-
-<aside>
-
-<p id="status">
-Existing character studio loading...
-</p>
-
-<details open>
-<summary>Animation Mode</summary>
-
-<select id="mode">
-<option>Manual</option>
-<option>Automatic</option>
-<option>Hybrid</option>
-</select>
-
-</details>
-
-<details open>
-<summary>Full Body Controls</summary>
-
-<label>Body Region</label>
-
-<select id="region">
-<option>Full Body</option>
-<option>Head and Neck</option>
-<option>Face</option>
-<option>Spine and Chest</option>
-<option>Pelvis and Waist</option>
-<option>Left Arm</option>
-<option>Right Arm</option>
-<option>Left Hand</option>
-<option>Right Hand</option>
-<option>Left Leg</option>
-<option>Right Leg</option>
-<option>Left Foot and Toes</option>
-<option>Right Foot and Toes</option>
-</select>
-
-<small>
-Use the existing character studio
-for individual bone posing.
-</small>
-
-</details>
-
-<details open>
-<summary>Combat Animation</summary>
-
-<label>Animation</label>
-
-<select id="animation">
-<option>Jab</option>
-<option>Straight Punch</option>
-<option>Hook</option>
-<option>Uppercut</option>
-<option>Double Punch</option>
-<option>Front Kick</option>
-<option>Side Kick</option>
-<option>Roundhouse Kick</option>
-<option>Block</option>
-<option>Dodge</option>
-<option>Sword Attack</option>
-</select>
-
-<label>Attack Side</label>
-
-<select id="side">
-<option>Right</option>
-<option>Left</option>
-<option>Both</option>
-</select>
-
-<label>Speed <span id="speedValue">75%</span></label>
-<input id="speed" type="range"
-min="10" max="200" value="75">
-
-<label>Power <span id="powerValue">80%</span></label>
-<input id="power" type="range"
-min="0" max="100" value="80">
-
-<label>Reach <span id="reachValue">85%</span></label>
-<input id="reach" type="range"
-min="0" max="100" value="85">
-
-<label>Direction <span id="directionValue">0°</span></label>
-<input id="direction" type="range"
-min="-180" max="180" value="0">
-
-</details>
-
-<details>
-<summary>Facial Animation Settings</summary>
-
-<label>Emotion</label>
-
-<select id="emotion">
-<option>Neutral</option>
-<option>Angry</option>
-<option>Happy</option>
-<option>Sad</option>
-<option>Fear</option>
-<option>Pain</option>
-<option>Determined</option>
-<option>Cold</option>
-</select>
-
-<label>Intensity</label>
-<input id="intensity" type="range"
-min="0" max="100" value="50">
-
-<label>Maximum Jaw Opening</label>
-<input id="jaw" type="range"
-min="0" max="100" value="40">
-
-<label>Wrinkle Strength</label>
-<input id="wrinkles" type="range"
-min="0" max="100" value="50">
-
-<small>
-Facial engine integration pending.
-</small>
-
-</details>
-
-<button id="save">Save Animation Settings</button>
-<button id="reset">Reset Settings</button>
-
-</aside>
-
-<iframe
-id="studio"
-src="./studio-v4.9.3-fix.html"
-title="Kumar Character Studio">
-</iframe>
-
-</main>
+<body style="background:#101827;color:white;font:16px Arial">
+<p id="loading">Preparing Kumar Studio V4.10...</p>
 
 <script>
-"use strict";
 
-const $=id=>document.getElementById(id);
+async function start(){
 
-const fields=[
-"mode","region","animation","side",
-"speed","power","reach","direction",
-"emotion","intensity","jaw","wrinkles"
+const names=[
+"studio-v4.9.3-fix.html",
+"studio-v4.9.3.html",
+"studio-v4.9.2.html",
+"studio-v4.9.1.html",
+"studio-v4.9.html",
+"studio-v4.8.html",
+"studio-v4.6.html",
+"studio-v4.5.html"
 ];
 
-const defaults={};
+const files={};
 
-for(const id of fields){
-defaults[id]=$(id).value;
+await Promise.all(names.map(async name=>{
+const response=await fetch("./"+name,{
+cache:"no-cache"
+});
+
+if(!response.ok)
+throw Error("Missing "+name);
+
+files[name]=await response.text();
+}));
+
+let source=files[names[0]];
+
+for(let i=0;i<8;i++){
+
+const match=source.match(
+/<script>([\s\S]*?)<\/script>/
+);
+
+if(!match)break;
+
+let output="";
+let error="";
+
+const virtualDocument={
+open(){},
+close(){},
+write(value){output=value;},
+getElementById(){
+return {
+set textContent(value){
+error=value;
+}
+};
+}
+};
+
+const virtualFetch=async path=>{
+
+const name=path.replace("./","");
+
+return {
+ok:typeof files[name]==="string",
+text:async()=>files[name]
+};
+
+};
+
+const run=new Function(
+"fetch",
+"document",
+match[1].replace(
+/start\(\)\.catch/g,
+"return start().catch"
+)
+);
+
+await run(
+virtualFetch,
+virtualDocument
+);
+
+if(error)throw Error(error);
+
+if(!output)
+throw Error("Source assembly failed");
+
+source=output;
+
 }
 
-function refresh(){
+const marker="renderer.setAnimationLoop(()=>{";
 
-for(const id of [
-"speed","power","reach","direction"
-]){
+if(!source.includes(marker))
+throw Error("Animation engine not found");
 
-$(id+"Value").textContent=
-$(id).value+
-(id==="direction"?"°":"%");
+const upgrade=`
+
+const combatPanel=document.createElement("details");
+
+combatPanel.open=true;
+
+combatPanel.innerHTML=
+'<summary>V4.10 Full Body Animation</summary>';
+
+anatomyPanel.parentElement.appendChild(combatPanel);
+
+function ui410(tag,text,parent=combatPanel){
+
+const el=document.createElement(tag);
+
+if(text)el.textContent=text;
+
+el.style.margin="5px 0";
+
+parent.appendChild(el);
+
+return el;
+
+}
+
+const status410=ui410(
+"p","Build the character rig first."
+);
+
+const boneSelect410=ui410("select");
+
+boneSelect410.style.width="100%";
+
+function range410(label,min,max,value){
+
+const row=ui410("div");
+
+const caption=ui410("label",label,row);
+
+const slider=ui410("input","",row);
+
+slider.type="range";
+slider.min=min;
+slider.max=max;
+slider.value=value;
+slider.style.width="100%";
+
+const output=ui410("span",String(value),row);
+
+slider.addEventListener("input",()=>{
+output.textContent=slider.value;
+});
+
+return {slider,output};
+
+}
+
+const axes410={};
+
+for(const axis of ["x","y","z"]){
+
+axes410[axis]=range410(
+"Joint "+axis.toUpperCase(),
+-180,180,0
+);
+
+axes410[axis].slider.oninput=()=>{
+
+if(!posed)return;
+
+stop410();
+
+const bone=getBone(boneSelect410.value);
+
+if(!bone)return;
+
+bone.rotation[axis]=
+THREE.MathUtils.degToRad(
+Number(axes410[axis].slider.value)
+);
+
+posed.updateMatrixWorld(true);
+
+syncJoint();
+
+};
+
+}
+
+function sync410(){
+
+const bone=getBone(boneSelect410.value);
+
+if(!bone)return;
+
+for(const axis of ["x","y","z"]){
+
+const value=Math.round(
+THREE.MathUtils.radToDeg(
+bone.rotation[axis]
+)
+);
+
+axes410[axis].slider.value=value;
+
+axes410[axis].output.textContent=value+"°";
 
 }
 
 }
 
-for(const id of fields){
-$(id).addEventListener("input",refresh);
+boneSelect410.onchange=sync410;
+
+function populate410(){
+
+boneSelect410.innerHTML="";
+
+for(const bone of bones){
+
+const option=document.createElement("option");
+
+option.value=bone.name;
+
+option.textContent=bone.name;
+
+boneSelect410.appendChild(option);
+
 }
 
-$("studio").addEventListener("load",()=>{
+sync410();
 
-$("status").textContent=
-"Character studio loaded. "+
-"Animation engine integration pending.";
+status410.textContent=
+bones.length+" individual bones available";
+
+}
+
+const build410=$("buildRig").onclick;
+
+$("buildRig").onclick=async()=>{
+
+stop410();
+
+await build410();
+
+if(posed)populate410();
+
+};
+
+const reset410=ui410(
+"button","Reset Selected Joint"
+);
+
+reset410.onclick=()=>{
+
+stop410();
+
+const bone=getBone(boneSelect410.value);
+
+if(!bone)return;
+
+bone.quaternion.identity();
+
+posed.updateMatrixWorld(true);
+
+sync410();
+
+syncJoint();
+
+};
+
+ui410("h3","Automatic Straight Punch");
+
+const side410=ui410("select");
+
+for(const side of ["R","L"]){
+
+const option=document.createElement("option");
+
+option.value=side;
+
+option.textContent=
+side==="R"?"Right Punch":"Left Punch";
+
+side410.appendChild(option);
+
+}
+
+const speed410=range410(
+"Speed %",25,200,100
+);
+
+const power410=range410(
+"Power %",0,100,80
+);
+
+const reach410=range410(
+"Reach %",20,100,85
+);
+
+const angle410=range410(
+"Direction", -90,90,0
+);
+
+const timeline410=range410(
+"Animation Timeline",0,100,0
+);
+
+let animation410=0;
+
+let snapshot410=null;
+
+let character410=null;
+
+function stop410(){
+
+if(animation410)
+cancelAnimationFrame(animation410);
+
+animation410=0;
+
+}
+
+function capture410(){
+
+if(!posed)return false;
+
+if(restRig!==posed)
+captureAnatomy();
+
+snapshot410=new Map();
+
+for(const bone of bones){
+
+snapshot410.set(
+bone.name,
+bone.quaternion.clone()
+);
+
+}
+
+character410=posed;
+
+return true;
+
+}
+
+function restore410(){
+
+if(!snapshot410||character410!==posed)
+return false;
+
+for(const bone of bones){
+
+const q=snapshot410.get(bone.name);
+
+if(q)bone.quaternion.copy(q);
+
+}
+
+posed.updateMatrixWorld(true);
+
+return true;
+
+}
+
+function aim410(bone,next,target,strength){
+
+if(!bone||!next||!bone.parent)return;
+
+const original=direction(
+bone.name,next.name
+);
+
+if(!original)return;
+
+const parentQ=bone.parent
+.getWorldQuaternion(
+new THREE.Quaternion()
+).invert();
+
+const localTarget=target.clone()
+.applyQuaternion(parentQ)
+.normalize();
+
+const rotation=new THREE.Quaternion()
+.setFromUnitVectors(
+original.normalize(),
+localTarget
+);
+
+const baseQ=snapshot410.get(bone.name);
+
+if(baseQ){
+
+bone.quaternion.copy(baseQ)
+.slerp(rotation,strength);
+
+}
+
+posed.updateMatrixWorld(true);
+
+}
+
+function punch410(progress){
+
+if(!posed||!restore410())return;
+
+const side=side410.value;
+
+const upper=getBone("upperarm01."+side);
+
+const lower=getBone("lowerarm01."+side);
+
+const wrist=getBone("wrist."+side);
+
+if(!upper||!lower||!wrist){
+
+stop410();
+
+status410.textContent=
+"Required arm bones not found";
+
+return;
+
+}
+
+const power=Number(
+power410.slider.value
+)/100;
+
+const reach=Number(
+reach410.slider.value
+)/100;
+
+const forwardVector=forward().clone();
+
+forwardVector.applyAxisAngle(
+new THREE.Vector3(0,1,0),
+THREE.MathUtils.degToRad(
+Number(angle410.slider.value)
+)
+);
+
+const envelope=Math.sin(
+Math.PI*progress
+);
+
+const strength=Math.min(
+1,envelope*1.3
+);
+
+const extension=Math.min(
+1,strength*reach
+);
+
+const upperTarget=forwardVector.clone();
+
+upperTarget.y=-0.15;
+
+upperTarget.normalize();
+
+aim410(
+upper,lower,upperTarget,
+extension
+);
+
+const lowerTarget=forwardVector.clone();
+
+lowerTarget.y=
+(1-extension)*0.75;
+
+lowerTarget.normalize();
+
+aim410(
+lower,wrist,lowerTarget,
+strength*(0.5+power*0.5)
+);
+
+sync410();
+
+syncJoint();
+
+}
+
+const play410=ui410(
+"button","Play Straight Punch"
+);
+
+play410.onclick=()=>{
+
+stop410();
+
+if(!capture410()){
+
+status410.textContent=
+"Build rig before animation";
+
+return;
+
+}
+
+const duration=1200/
+(Number(speed410.slider.value)/100);
+
+const startTime=performance.now();
+
+function frame(now){
+
+if(!posed||character410!==posed){
+
+stop410();
+
+return;
+
+}
+
+const t=Math.min(
+1,(now-startTime)/duration
+);
+
+punch410(t);
+
+timeline410.slider.value=
+Math.round(t*100);
+
+timeline410.output.textContent=
+Math.round(t*100)+"%";
+
+if(t<1){
+
+animation410=
+requestAnimationFrame(frame);
+
+}else{
+
+animation410=0;
+
+status410.textContent=
+"Punch complete";
+
+}
+
+}
+
+status410.textContent="Playing punch";
+
+animation410=
+requestAnimationFrame(frame);
+
+};
+
+timeline410.slider.oninput=()=>{
+
+stop410();
+
+if(!posed)return;
+
+if(!snapshot410||character410!==posed){
+
+if(!capture410())return;
+
+}
+
+punch410(
+Number(timeline410.slider.value)/100
+);
+
+};
+
+const pause410=ui410(
+"button","Pause / Edit Current Pose"
+);
+
+pause410.onclick=()=>{
+
+stop410();
+
+sync410();
+
+status410.textContent=
+"Paused - manual editing available";
+
+};
+
+const basePose410=ui410(
+"button","Capture Current Base Pose"
+);
+
+basePose410.onclick=()=>{
+
+stop410();
+
+if(capture410()){
+
+status410.textContent=
+"Current pose captured";
+
+}
+
+};
+
+const restoreButton410=ui410(
+"button","Restore Base Pose"
+);
+
+restoreButton410.onclick=()=>{
+
+stop410();
+
+restore410();
+
+sync410();
+
+syncJoint();
+
+};
+
+const previousReset410=$("resetPose").onclick;
+
+$("resetPose").onclick=()=>{
+
+stop410();
+
+snapshot410=null;
+
+previousReset410();
+
+sync410();
+
+};
+
+document.title="Kumar Studio V4.10";
+
+`;
+
+source=source.replace(
+marker,
+upgrade+"\\n"+marker
+);
+
+source=source.replace(
+/Kumar Studio V4\\.5/g,
+"Kumar Studio V4.10"
+);
+
+document.open();
+document.write(source);
+document.close();
+
+}
+
+start().catch(error=>{
+
+document.getElementById("loading")
+.textContent="Error: "+error.message;
 
 });
 
-$("save").onclick=()=>{
-
-const settings={};
-
-for(const id of fields){
-settings[id]=$(id).value;
-}
-
-try{
-
-localStorage.setItem(
-"kumar-v410-animation-settings",
-JSON.stringify(settings)
-);
-
-$("status").textContent=
-"Animation settings saved.";
-
-}catch(error){
-
-$("status").textContent=
-"Save failed: "+error.message;
-
-}
-
-};
-
-$("reset").onclick=()=>{
-
-for(const id of fields){
-$(id).value=defaults[id];
-}
-
-refresh();
-
-$("status").textContent=
-"Animation settings reset.";
-
-};
-
-try{
-
-const saved=JSON.parse(
-localStorage.getItem(
-"kumar-v410-animation-settings"
-)||"null"
-);
-
-if(saved){
-
-for(const id of fields){
-
-if(saved[id]!==undefined){
-$(id).value=saved[id];
-}
-
-}
-
-}
-
-}catch(error){
-console.warn(error);
-}
-
-refresh();
-
 </script>
-
 </body>
 </html>
