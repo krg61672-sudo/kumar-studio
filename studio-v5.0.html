@@ -3083,7 +3083,7 @@ $('handTestStop').onclick=()=>{finishHandTests();$('handTestStatus').textContent
 
 const locomotionPanel=document.createElement("details");
 locomotionPanel.open=true;
-locomotionPanel.innerHTML='<summary>V5.1 Motion Presets</summary><select id="motionPreset"><option>Walk</option><option>Royal Walk</option><option>Confident Walk</option><option>Stealth Walk</option><option>Tired Walk</option><option>Injured Walk</option><option>Slow Walk</option><option>Brisk Walk</option><option>March</option><option>Guard Patrol</option><option>Elderly Walk</option><option>Sneak Walk</option><option>Sad Walk</option><option>Angry Walk</option><option>Graceful Walk</option><option>Heavy Walk</option><option>Run</option><option>Jump</option></select><label>Speed <input id="motionSpeed" type="range" min="25" max="200" value="100"></label><label>Timeline <input id="motionTime" type="range" min="0" max="100" value="0"></label><button id="motionPlay">Play</button><button id="motionPause">Pause</button><button id="motionRestore">Restore Base Pose</button><p id="motionStatus">Build skeleton first.</p>';
+locomotionPanel.innerHTML='<summary>V5.1 Motion Presets</summary><select id="motionPreset"><option>Walk</option><option>Royal Walk</option><option>Confident Walk</option><option>Stealth Walk</option><option>Tired Walk</option><option>Injured Walk</option><option>Slow Walk</option><option>Brisk Walk</option><option>March</option><option>Guard Patrol</option><option>Elderly Walk</option><option>Sneak Walk</option><option>Sad Walk</option><option>Angry Walk</option><option>Graceful Walk</option><option>Heavy Walk</option><option>Run</option><option>Jump</option></select><label>Speed <input id="motionSpeed" type="range" min="25" max="200" value="100"></label><label>Steps <select id="motionSteps"><option value="4">4 steps</option><option value="6">6 steps</option><option value="8">8 steps</option><option value="12">12 steps</option></select></label><label>Timeline <input id="motionTime" type="range" min="0" max="100" value="0"></label><button id="motionPlay">Play</button><button id="motionPause">Pause</button><button id="motionRestore">Restore Base Pose</button><p id="motionStatus">Build skeleton first.</p>';
 document.querySelector("aside").appendChild(locomotionPanel);
 let motionBase=null,motionFrame=0,motionProgress=0;
 function motionPause(){if(motionFrame)cancelAnimationFrame(motionFrame);motionFrame=0;}
@@ -3106,7 +3106,8 @@ function motionPose(t){
  const styles={"Walk":[23,40,18,12,5,3,0,0.018],"Royal Walk":[19,32,10,8,3,2,-3,.012],"Confident Walk":[29,45,25,15,7,4,-2,.025],"Stealth Walk":[17,48,9,25,3,2,15,.008],"Tired Walk":[15,28,8,10,4,3,12,.012],"Injured Walk":[18,32,12,12,5,5,6,.016],"Run":[40,75,35,45,8,5,12,.045]};
  Object.assign(styles,{"Slow Walk":[15,30,12,10,4,3,1,.012],"Brisk Walk":[30,48,24,18,6,4,5,.023],"March":[30,55,35,12,3,2,0,.025],"Guard Patrol":[20,35,12,18,3,2,0,.012],"Elderly Walk":[12,24,8,15,3,4,15,.009],"Sneak Walk":[14,45,7,25,3,2,18,.007],"Sad Walk":[16,30,8,10,3,3,13,.012],"Angry Walk":[32,45,28,20,5,3,8,.027],"Graceful Walk":[22,36,13,10,6,5,-2,.014],"Heavy Walk":[24,42,15,15,4,5,7,.03]});
  const [stride,knee,arm,elbow,twist,sway,lean,bob]=styles[mode]||styles.Walk;
- const phase=t*Math.PI*2;
+ const steps=Number($("motionSteps").value)||4;
+ const phase=t*Math.PI*2*(jump?1:steps/2);
  const f=forward().clone();f.y=0;if(f.lengthSq()<1e-8)f.set(0,0,1);f.normalize();
  const up=new THREE.Vector3(0,1,0),axis=new THREE.Vector3().crossVectors(up,f).normalize();
  function turn(name,degrees,worldAxis=axis){
@@ -3145,7 +3146,19 @@ function motionPose(t){
  }
  const height=jump?Math.sin(Math.PI*t)*.28:Math.abs(Math.sin(phase))*bob-(mode==="Stealth Walk"?.06:0);
  bones[0].position.y+=height;
- if(!jump)bones[0].position.addScaledVector(axis,Math.sin(phase)*.012);
+ if(!jump){
+ const root=bones[0];
+ const hip=rest.get("upperleg01.L"),ankle=rest.get("foot.L");
+ const legLength=hip&&ankle?hip.distanceTo(ankle):.8;
+ const stepLength=2*legLength*Math.sin(THREE.MathUtils.degToRad(stride))*(run?1.05:.85);
+ const worldOffset=f.clone().multiplyScalar(t*steps*stepLength).addScaledVector(axis,Math.sin(phase)*.012);
+ if(root.parent){
+ root.parent.updateWorldMatrix(true,false);
+ const origin=root.parent.worldToLocal(new THREE.Vector3());
+ worldOffset.copy(root.parent.worldToLocal(worldOffset).sub(origin));
+ }
+ root.position.add(worldOffset);
+ }
  posed.updateMatrixWorld(true);syncJoint();
 }
 $("motionPlay").onclick=()=>{
@@ -3155,10 +3168,10 @@ $("motionPlay").onclick=()=>{
  let last=performance.now();
  function tick(now){
  if(!motionBase||motionBase.rig!==posed){motionPause();return;}
- motionProgress+=(now-last)/duration*Number($("motionSpeed").value)/100;last=now;
- if(mode==="Jump")motionProgress=Math.min(1,motionProgress);else motionProgress%=1;
+ const cycles=mode==="Jump"?1:(Number($("motionSteps").value)||4)/2;
+ motionProgress=Math.min(1,motionProgress+(now-last)/(duration*cycles)*Number($("motionSpeed").value)/100);last=now;
  motionPose(motionProgress);$("motionTime").value=Math.round(motionProgress*100);
- if(mode==="Jump"&&motionProgress>=1){motionFrame=0;$("motionStatus").textContent="Jump complete";return;}
+ if(motionProgress>=1){motionFrame=0;$("motionStatus").textContent=mode==="Jump"?"Jump complete":mode+" complete: "+$("motionSteps").value+" steps";return;}
  motionFrame=requestAnimationFrame(tick);
  }
  $("motionStatus").textContent="Playing "+mode;motionFrame=requestAnimationFrame(tick);
@@ -3166,7 +3179,7 @@ $("motionPlay").onclick=()=>{
 $("motionPause").onclick=()=>{motionPause();$("motionStatus").textContent="Paused";};
 $("motionRestore").onclick=()=>{motionRestore();$("motionStatus").textContent="Base pose restored";};
 $("motionTime").oninput=()=>{motionPause();if(motionCapture()){motionProgress=Number($("motionTime").value)/100;motionPose(motionProgress);}};
-$("motionPreset").onchange=()=>{motionRestore();};
+$("motionPreset").onchange=$("motionSteps").onchange=()=>{motionRestore();};
 const priorMotionTest=$("runHandTests").onclick;
 $("runHandTests").onclick=()=>{motionRestore();return priorMotionTest();};
 const priorMotionPunch=play410.onclick;
