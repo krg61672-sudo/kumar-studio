@@ -1,0 +1,427 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kumar Studio V4.6</title>
+</head>
+<body style="background:#101827;color:white;font:16px Arial">
+<p id="loading">Loading Kumar Studio V4.6...</p>
+<script>
+async function start(){
+const response=await fetch('./studio-v4.5.html');
+if(!response.ok)throw Error('V4.5 unavailable');
+let html=await response.text();
+
+const panel=`
+<details open>
+<summary>MANUAL POSE STUDIO</summary>
+<button id="buildRig">Build Character Skeleton</button>
+<p id="rigStatus">Build skeleton after sculpting.</p>
+<label>Selected Joint</label>
+<select id="joint"></select>
+<label>X Rotation <span id="rxv">0°</span></label>
+<input id="rx" type="range" min="-180" max="180" value="0">
+<label>Y Rotation <span id="ryv">0°</span></label>
+<input id="ry" type="range" min="-180" max="180" value="0">
+<label>Z Rotation <span id="rzv">0°</span></label>
+<input id="rz" type="range" min="-180" max="180" value="0">
+<button id="showRig">Show / Hide Skeleton</button>
+<button id="resetJoint">Reset Joint</button>
+<button id="resetPose">Reset Full Pose</button>
+<label>Move Left / Right</label>
+<input id="moveX" type="range" min="-3" max="3" step=".01" value="0">
+<label>Move Up / Down</label>
+<input id="moveY" type="range" min="0" max="3" step=".01" value="0">
+<label>Move Forward / Backward</label>
+<input id="moveZ" type="range" min="-3" max="3" step=".01" value="0">
+<button id="savePose">Save Pose</button>
+<label>Open Saved Pose</label>
+<input id="loadPose" type="file" accept=".json">
+<button id="exportPose">Export Posed Character</button>
+<button id="exitPose">Return to Sculpting</button>
+</details>`;
+
+const rigCode=`
+let posed=null;
+let rigHelper=null;
+let rigSource=null;
+let bones=[];
+let segments=[];
+let rigGeneration=-1;
+let rigOrigin=new THREE.Vector3();
+
+function rigStatus(s){
+$('rigStatus').textContent=s;
+}
+
+function clearRig(){
+if(posed){
+scene.remove(posed);
+posed.geometry.dispose();
+posed.skeleton.dispose();
+posed=null;
+}
+if(rigHelper){
+scene.remove(rigHelper);
+rigHelper.geometry.dispose();
+rigHelper.material.dispose();
+rigHelper=null;
+}
+if(rigSource)rigSource.visible=true;
+rigSource=null;
+bones=[];
+segments=[];
+$('joint').replaceChildren();
+}
+
+function createRig(){
+if(!mesh)throw Error('Load human first');
+clearRig();
+update();
+mesh.updateMatrixWorld(true);
+
+const geo=mesh.geometry.clone();
+geo.applyMatrix4(mesh.matrixWorld);
+
+const p=geo.attributes.position;
+const box=bounds(p.array);
+const h=box.max.y-box.min.y;
+const w=box.max.x-box.min.x;
+const cx=(box.max.x+box.min.x)/2;
+const cz=(box.max.z+box.min.z)/2;
+const y=box.min.y;
+
+function point(x,yy,z=0){
+return new THREE.Vector3(
+cx+x*w,y+yy*h,cz+z*h);
+}
+
+function bone(name,parent,x,yy,z=0){
+const b=new THREE.Bone();
+b.name=name;
+const pos=point(x,yy,z);
+
+if(parent>=0){
+b.position.copy(pos).sub(segments[parent].start);
+bones[parent].add(b);
+}else{
+b.position.copy(pos);
+}
+
+bones.push(b);
+segments.push({
+start:pos,
+end:pos.clone(),
+parent:parent
+});
+return bones.length-1;
+}
+
+const pelvis=bone('Pelvis',-1,0,.52);
+const spine=bone('Lower Spine',pelvis,0,.60);
+const chest=bone('Chest',spine,0,.72);
+const neck=bone('Neck',chest,0,.84);
+const head=bone('Head',neck,0,.90);
+
+for(const side of [-1,1]){
+const label=side===1?'Left ':'Right ';
+
+const shoulder=bone(
+label+'Shoulder',chest,side*.18,.80);
+
+const elbow=bone(
+label+'Elbow',shoulder,side*.32,.65);
+
+const wrist=bone(
+label+'Wrist',elbow,side*.43,.51);
+
+bone(label+'Hand',wrist,side*.47,.46);
+
+const hip=bone(
+label+'Hip',pelvis,side*.09,.51);
+
+const knee=bone(
+label+'Knee',hip,side*.09,.28);
+
+const ankle=bone(
+label+'Ankle',knee,side*.09,.045);
+
+bone(label+'Foot',ankle,side*.09,.025,.045);
+}
+
+for(let i=0;i<segments.length;i++){
+const children=segments.filter(s=>s.parent===i);
+if(children.length){
+segments[i].end.copy(children[0].start);
+}else{
+const parent=segments[i].parent;
+if(parent>=0){
+const d=segments[i].start.clone()
+.sub(segments[parent].start)
+.normalize().multiplyScalar(h*.045);
+segments[i].end.add(d);
+}
+}
+}
+
+function distanceToSegment(v,a,b){
+const ab=b.clone().sub(a);
+const t=THREE.MathUtils.clamp(
+v.clone().sub(a).dot(ab)/
+Math.max(ab.lengthSq(),.000001),0,1);
+return v.distanceToSquared(
+a.clone().addScaledVector(ab,t));
+}
+
+const skinIndices=[];
+const skinWeights=[];
+const v=new THREE.Vector3();
+
+for(let i=0;i<p.count;i++){
+v.fromBufferAttribute(p,i);
+
+const nearest=segments.map((s,j)=>({
+index:j,
+distance:distanceToSegment(v,s.start,s.end)
+})).sort((a,b)=>a.distance-b.distance).slice(0,4);
+
+let weights=nearest.map(n=>
+1/Math.pow(n.distance+h*h*.0001,2));
+
+const sum=weights.reduce((a,b)=>a+b,0);
+
+for(let j=0;j<4;j++){
+skinIndices.push(nearest[j].index);
+skinWeights.push(weights[j]/sum);
+}
+}
+
+geo.setAttribute('skinIndex',
+new THREE.Uint16BufferAttribute(skinIndices,4));
+
+geo.setAttribute('skinWeight',
+new THREE.Float32BufferAttribute(skinWeights,4));
+
+posed=new THREE.SkinnedMesh(geo,material);
+posed.name='Manual Pose Character';
+posed.add(bones[0]);
+scene.add(posed);
+posed.updateMatrixWorld(true);
+
+posed.bind(new THREE.Skeleton(bones));
+posed.frustumCulled=false;
+
+rigHelper=new THREE.SkeletonHelper(posed);
+scene.add(rigHelper);
+
+rigSource=mesh;
+rigSource.visible=false;
+rigGeneration=generation;
+rigOrigin.copy(bones[0].position);
+
+$('joint').replaceChildren();
+
+bones.forEach((b,i)=>{
+const o=document.createElement('option');
+o.value=i;
+o.textContent=b.name;
+$('joint').appendChild(o);
+});
+
+for(const id of ['moveX','moveY','moveZ']){
+$(id).value=0;
+}
+
+syncJoint();
+rigStatus('Basic skeleton ready: '+bones.length+' joints');
+}
+
+function selectedBone(){
+return bones[Number($('joint').value)];
+}
+
+function syncJoint(){
+const b=selectedBone();
+if(!b)return;
+for(const axis of ['x','y','z']){
+const val=Math.round(
+THREE.MathUtils.radToDeg(b.rotation[axis]));
+$('r'+axis).value=val;
+$('r'+axis+'v').textContent=val+'°';
+}
+}
+
+function rotateJoint(){
+const b=selectedBone();
+if(!b)return;
+for(const axis of ['x','y','z']){
+const val=Number($('r'+axis).value);
+b.rotation[axis]=THREE.MathUtils.degToRad(val);
+$('r'+axis+'v').textContent=val+'°';
+}
+}
+
+function moveCharacter(){
+if(!posed)return;
+bones[0].position.copy(rigOrigin).add(
+new THREE.Vector3(
+Number($('moveX').value),
+Number($('moveY').value),
+Number($('moveZ').value)));
+}
+
+$('buildRig').onclick=()=>{
+try{createRig()}
+catch(e){rigStatus(e.message)}
+};
+
+$('joint').onchange=syncJoint;
+
+for(const axis of ['x','y','z']){
+$('r'+axis).oninput=rotateJoint;
+}
+
+for(const id of ['moveX','moveY','moveZ']){
+$(id).oninput=moveCharacter;
+}
+
+$('showRig').onclick=()=>{
+if(rigHelper)rigHelper.visible=!rigHelper.visible;
+};
+
+$('resetJoint').onclick=()=>{
+const b=selectedBone();
+if(b){b.rotation.set(0,0,0);syncJoint()}
+};
+
+$('resetPose').onclick=()=>{
+bones.forEach(b=>b.rotation.set(0,0,0));
+for(const id of ['moveX','moveY','moveZ']){
+$(id).value=0;
+}
+moveCharacter();
+syncJoint();
+};
+
+$('exitPose').onclick=()=>{
+clearRig();
+rigStatus('Sculpting mode. Rebuild rig after changes.');
+};
+
+$('savePose').onclick=()=>{
+if(!posed)return;
+const data={
+version:'4.6',
+joints:bones.map(b=>({
+name:b.name,
+rotation:[b.rotation.x,b.rotation.y,b.rotation.z]
+})),
+movement:['moveX','moveY','moveZ']
+.map(id=>Number($(id).value))
+};
+download('Kumar-Pose.json',
+JSON.stringify(data,null,2),'application/json');
+};
+
+$('loadPose').onchange=async e=>{
+try{
+if(!e.target.files[0])return;
+const data=JSON.parse(
+await e.target.files[0].text());
+
+if(data.version!=='4.6'||
+!Array.isArray(data.joints))
+throw Error('Invalid pose file');
+
+if(!posed)createRig();
+
+for(const item of data.joints){
+const b=bones.find(b=>b.name===item.name);
+if(b&&Array.isArray(item.rotation)&&
+item.rotation.length===3&&
+item.rotation.every(Number.isFinite)){
+b.rotation.set(...item.rotation);
+}
+}
+
+['moveX','moveY','moveZ'].forEach((id,i)=>{
+$(id).value=data.movement?.[i]||0;
+});
+
+moveCharacter();
+syncJoint();
+rigStatus('Saved pose restored');
+}catch(err){rigStatus(err.message)}
+};
+
+$('exportPose').onclick=()=>{
+if(!posed)return;
+posed.updateMatrixWorld(true);
+posed.skeleton.update();
+
+const p=posed.geometry.attributes.position;
+const ix=posed.geometry.index.array;
+const v=new THREE.Vector3();
+const out=['# Kumar Studio V4.6 Pose'];
+
+for(let i=0;i<p.count;i++){
+posed.getVertexPosition(i,v);
+v.applyMatrix4(posed.matrixWorld);
+out.push('v '+v.x+' '+v.y+' '+v.z);
+}
+
+for(let i=0;i<ix.length;i+=3){
+out.push('f '+(ix[i]+1)+' '+
+(ix[i+1]+1)+' '+(ix[i+2]+1));
+}
+
+download('Kumar-Posed-Character.obj',
+out.join('\\n'),'text/plain');
+};
+
+const originalUpdate=update;
+update=function(){
+if(posed){
+clearRig();
+rigStatus('Shape changed. Rebuild skeleton.');
+}
+originalUpdate();
+};
+`;
+
+if(!html.includes('renderer.setAnimationLoop(()=>{'))
+throw Error('V4.5 code structure changed');
+
+html=html.replaceAll('V4.5','V4.6');
+
+html=html.replace(
+'</aside>',panel+'</aside>');
+
+html=html.replace(
+'renderer.setAnimationLoop(()=>{',
+rigCode+'\\nrenderer.setAnimationLoop(()=>{\\n'+
+'if(posed&&rigGeneration!==generation)clearRig();'
+);
+
+// Correct inserted line separators.
+html=html.replace(
+rigCode+'\\nrenderer',
+rigCode+'\nrenderer'
+).replace(
+'setAnimationLoop(()=>{\\nif(posed',
+'setAnimationLoop(()=>{\nif(posed'
+);
+
+document.open();
+document.write(html);
+document.close();
+}
+
+start().catch(e=>{
+document.getElementById('loading').textContent=e.message;
+});
+</script>
+</body>
+</html>
