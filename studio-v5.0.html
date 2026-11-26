@@ -3061,13 +3061,18 @@ function motionCapture(){
  stop410();
  if(!motionBase||motionBase.rig!==posed){
   posed.updateMatrixWorld(true);
-  motionBase={rig:posed,q:bones.map(b=>b.quaternion.clone()),p:bones.map(b=>b.position.clone()),
-   feet:Object.fromEntries(['L','R'].map(side=>{
-    const foot=getBone('foot.'+side);
-    return [side,{position:captureWorld(foot),orientation:foot.getWorldQuaternion(new THREE.Quaternion())}];
-   }))};
+  motionBase=motionWithFeet(seqSnapshot());
  }
  return true;
+}
+
+function motionWithFeet(snapshot){
+ const feet={};
+ for(const side of ["L","R"]){
+  const foot=getBone("foot."+side);
+  feet[side]={position:captureWorld(foot),orientation:foot.getWorldQuaternion(new THREE.Quaternion())};
+ }
+ return {...snapshot,feet};
 }
 
 function groundedWalk(t,steps,f,stride,bob){
@@ -3428,7 +3433,7 @@ $("seqSavePose").onclick=()=>{if(!posed||restRig!==posed)return;const name="Cust
 function seqPrepare(){if(!posed||restRig!==posed||!seqItems.length)return false;if(seqBase&&seqBase.rig===posed)return true;motionRestore();captureRestore();stop410();if(testSnapshot)finishHandTests();seqBase=seqSnapshot();return true;}
 function seqSample(item,t,base){seqApply(base);if(item.name==="Stand")return seqSnapshot();if(seqPoses.has(item.name)){const p=seqPoses.get(item.name);if(p.rig===posed){const rootPos=bones[0].position.clone();seqApply(p);bones[0].position.copy(rootPos);posed.updateMatrixWorld(true);}return seqSnapshot();}
 if(item.name==="Recorded BVH"){if(!captureData)return seqSnapshot();captureBase=base;captureData.anchors=null;capturePose(t*captureData.clip.duration);captureBase=null;return seqSnapshot();}
-const old=$("motionPreset").value;$("motionPreset").value=item.name;motionBase=base;motionPose(t);motionBase=null;$("motionPreset").value=old;return seqSnapshot();}
+const old=$("motionPreset").value;$("motionPreset").value=item.name;motionBase=motionWithFeet(base);try{motionPose(t);}finally{motionBase=null;$("motionPreset").value=old;}return seqSnapshot();}
 function seqPose(seconds){if(!seqBase||seqBase.rig!==posed)return;let base=seqBase,elapsed=0;for(const item of seqItems){const t=THREE.MathUtils.clamp((seconds-elapsed)/item.duration,0,1);const result=seqSample(item,t,base);if(seconds<=elapsed+item.duration){const blend=THREE.MathUtils.smoothstep(t*item.duration,0,Math.min(.25,item.duration*.5));for(let i=0;i<bones.length;i++){bones[i].quaternion.copy(base.q[i]).slerp(result.q[i],blend);bones[i].position.copy(base.p[i]).lerp(result.p[i],blend);}posed.updateMatrixWorld(true);syncJoint();return;}base=result;elapsed+=item.duration;}}
 const seqTotal=()=>seqItems.reduce((n,x)=>n+x.duration,0);
 $("seqPlay").onclick=()=>{if(seqRAF)cancelAnimationFrame(seqRAF);if(!seqPrepare()){$("seqStatus").textContent="Build skeleton and add actions first.";return;}const start=performance.now(),total=seqTotal();function frame(now){if(!seqBase||seqBase.rig!==posed){seqStop();return;}const t=Math.min(total,(now-start)/1000);seqPose(t);$("seqTime").value=Math.round(t/total*1000);if(t<total)seqRAF=requestAnimationFrame(frame);else seqRAF=0;}seqRAF=requestAnimationFrame(frame);};
