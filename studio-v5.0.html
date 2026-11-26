@@ -1434,7 +1434,7 @@ bone.quaternion.setFromAxisAngle(
 if(j===1){
 
 // The palm normal is a direction. A mirrored rotation about it needs the opposite angle.
-const spreadAngle = (f - 3.5) * state.spread * 0.12 * (side === 'L' ? -1 : 1);
+const spreadAngle = (f - 3.5) * (side === 'L' ? (state.spread - 35) * -0.12 : state.spread * 0.12);
 
 const q=new THREE.Quaternion()
 .setFromAxisAngle(
