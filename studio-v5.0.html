@@ -3049,7 +3049,7 @@ $('handTestStop').onclick=()=>{finishHandTests();$('handTestStatus').textContent
 
 const locomotionPanel=document.createElement("details");
 locomotionPanel.open=true;
-locomotionPanel.innerHTML='<summary>V5.1 Motion Presets</summary><select id="motionPreset"><option>Walk</option><option>Run</option><option>Jump</option></select><label>Speed <input id="motionSpeed" type="range" min="25" max="200" value="100"></label><label>Timeline <input id="motionTime" type="range" min="0" max="100" value="0"></label><button id="motionPlay">Play</button><button id="motionPause">Pause</button><button id="motionRestore">Restore Base Pose</button><p id="motionStatus">Build skeleton first.</p>';
+locomotionPanel.innerHTML='<summary>V5.1 Motion Presets</summary><select id="motionPreset"><option>Walk</option><option>Royal Walk</option><option>Confident Walk</option><option>Stealth Walk</option><option>Tired Walk</option><option>Injured Walk</option><option>Run</option><option>Jump</option></select><label>Speed <input id="motionSpeed" type="range" min="25" max="200" value="100"></label><label>Timeline <input id="motionTime" type="range" min="0" max="100" value="0"></label><button id="motionPlay">Play</button><button id="motionPause">Pause</button><button id="motionRestore">Restore Base Pose</button><p id="motionStatus">Build skeleton first.</p>';
 document.querySelector("aside").appendChild(locomotionPanel);
 let motionBase=null,motionFrame=0,motionProgress=0;
 function motionPause(){if(motionFrame)cancelAnimationFrame(motionFrame);motionFrame=0;}
@@ -3069,26 +3069,38 @@ function motionPose(t){
  if(!motionBase||motionBase.rig!==posed)return;
  bones.forEach((b,i)=>{b.quaternion.copy(motionBase.q[i]);b.position.copy(motionBase.p[i]);});
  const mode=$("motionPreset").value,run=mode==="Run",jump=mode==="Jump";
+ const styles={"Walk":[23,40,18,12,5,3,0,0.018],"Royal Walk":[19,32,10,8,3,2,-3,.012],"Confident Walk":[29,45,25,15,7,4,-2,.025],"Stealth Walk":[17,48,9,25,3,2,15,.008],"Tired Walk":[15,28,8,10,4,3,12,.012],"Injured Walk":[18,32,12,12,5,5,6,.016],"Run":[40,75,35,45,8,5,12,.045]};
+ const [stride,knee,arm,elbow,twist,sway,lean,bob]=styles[mode]||styles.Walk;
  const phase=t*Math.PI*2;
  const f=forward().clone();f.y=0;if(f.lengthSq()<1e-8)f.set(0,0,1);f.normalize();
- const axis=new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0),f).normalize();
- function turn(name,degrees){
- const b=getBone(name);if(!b)return;
- const localAxis=axis.clone().applyQuaternion(b.parent.getWorldQuaternion(new THREE.Quaternion()).invert());
+ const up=new THREE.Vector3(0,1,0),axis=new THREE.Vector3().crossVectors(up,f).normalize();
+ function turn(name,degrees,worldAxis=axis){
+ const b=getBone(name);if(!b||!b.parent)return;
+ const localAxis=worldAxis.clone().applyQuaternion(b.parent.getWorldQuaternion(new THREE.Quaternion()).invert());
  b.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(localAxis,THREE.MathUtils.degToRad(degrees)));
  posed.updateMatrixWorld(true);
  }
  posed.updateMatrixWorld(true);
- for(const side of ["L","R"]){
- const wave=Math.sin(phase+(side==="R"?Math.PI:0));
  const crouch=Math.sin(Math.PI*t);
- turn("upperleg01."+side,jump?-35*crouch:wave*(run?40:23));
- turn("lowerleg01."+side,jump?65*crouch:Math.max(0,-wave)*(run?75:40));
- turn("upperarm01."+side,jump?35*crouch:-wave*(run?35:18));
- turn("lowerarm01."+side,jump?20*crouch:run?45:12);
+ const pelvis=getBone("pelvis")||getBone("root")||bones[0];
+ if(pelvis&&pelvis.parent){turn(pelvis.name,jump?0:twist*Math.sin(phase),up);turn(pelvis.name,jump?0:sway*Math.cos(phase),f);}
+ for(const j of spineChain()){turn(j.name,jump?8*crouch/5:lean/5);turn(j.name,jump?0:-twist*Math.sin(phase)/5,up);}
+ turn("neck01",jump?0:-lean*.35);turn("head",jump?0:-lean*.3);
+ for(const side of ["L","R"]){
+ const p=phase+(side==="R"?Math.PI:0),wave=Math.sin(p);
+ const limp=mode==="Injured Walk"&&side==="L"?.45:1;
+ const stealth=mode==="Stealth Walk"?18:0;
+ turn("upperleg01."+side,jump?-35*crouch:wave*stride*limp-stealth);
+ turn("lowerleg01."+side,jump?65*crouch:Math.max(0,-wave)*knee*limp+stealth);
+ turn("foot."+side,jump?-15*crouch:8*Math.cos(p)-Math.max(0,-wave)*12);
+ turn("toe2-1."+side,jump?0:Math.max(0,Math.cos(p))*12);
+ turn("upperarm01."+side,jump?35*crouch:-wave*arm*limp);
+ turn("lowerarm01."+side,jump?20*crouch:elbow+Math.max(0,wave)*8);
+ turn("wrist."+side,jump?0:wave*4);
  }
- const height=jump?Math.sin(Math.PI*t)*.28:Math.abs(Math.sin(phase))*(run?.045:.018);
+ const height=jump?Math.sin(Math.PI*t)*.28:Math.abs(Math.sin(phase))*bob-(mode==="Stealth Walk"?.06:0);
  bones[0].position.y+=height;
+ if(!jump)bones[0].position.addScaledVector(axis,Math.sin(phase)*.012);
  posed.updateMatrixWorld(true);syncJoint();
 }
 $("motionPlay").onclick=()=>{
