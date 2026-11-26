@@ -1,0 +1,2887 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kumar Studio V4.9.3 Hand and Archery Studio</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0c1220;color:#eee;font:14px Arial}
+header{height:54px;padding:15px;background:#17243a;color:#edc47c;font-size:20px;font-weight:bold}
+main{display:flex;height:calc(100dvh - 54px)}
+aside{width:320px;max-width:46vw;overflow:auto;padding:12px;background:#17243a}
+#view{flex:1;min-width:0;position:relative}
+canvas{display:block;touch-action:none}
+button,select,input{font:inherit}
+button,select,input[type=text]{width:100%;padding:10px;margin:5px 0;background:#263953;color:white;border:1px solid #526984;border-radius:7px}
+button{cursor:pointer}
+button:disabled{opacity:.5}
+input[type=range]{width:100%;accent-color:#e8bb71}
+input[type=color]{width:100%;height:35px}
+details{margin:10px 0;border-bottom:1px solid #35465d;padding-bottom:10px}
+summary{color:#edc47c;padding:10px 0;cursor:pointer;font-weight:bold}
+label{display:block;margin-top:10px}
+.control{padding:10px 0;border-bottom:1px solid #34455d}
+.line{display:flex;align-items:center;gap:8px}
+.line span:first-child{flex:1}
+.value{color:#edc47c}
+.small{width:auto;padding:4px 9px}
+#status,#libraryStatus{font-size:12px;color:#edc47c;overflow-wrap:anywhere}
+#info{position:absolute;top:10px;right:10px;background:#17243acc;padding:10px;border-radius:8px;pointer-events:none}
+</style>
+<script type="importmap">
+{"imports":{
+"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+"three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+</head>
+<body>
+<header>KUMAR STUDIO V4.9.3 Hand and Archery Studio</header>
+<main>
+<aside>
+<h3>CHARACTER CREATOR</h3>
+<button id="load">Load Human</button>
+<p id="status">Initializing...</p>
+
+<details open>
+<summary>Character Preset</summary>
+<select id="gender">
+<option value="male">Adult Male</option>
+<option value="female">Adult Female</option>
+</select>
+<button id="preset">Apply Preset</button>
+</details>
+
+<details>
+<summary>Body Dimensions</summary>
+<label>Height: <span id="heightValue">180 cm</span></label>
+<input id="height" type="range" min="140" max="220" value="180">
+<label>Body Width</label>
+<input id="width" type="range" min=".75" max="1.25" step=".01" value="1">
+<label>Body Depth</label>
+<input id="depth" type="range" min=".75" max="1.25" step=".01" value="1">
+</details>
+
+<details open>
+<summary>Body & Face Sculpting</summary>
+<select id="category"></select>
+<input id="search" type="text" placeholder="Search controls...">
+<p id="libraryStatus"></p>
+<div id="catalog"></div>
+</details>
+
+<details>
+<summary>Skin Studio</summary>
+<label>Skin Colour</label>
+<input id="skin" type="color" value="#d9ad94">
+<label>Skin Roughness</label>
+<input id="roughness" type="range" min=".1" max="1" step=".01" value=".8">
+</details>
+
+<details>
+<summary>Camera Studio</summary>
+<button id="front">Front View</button>
+<button id="back">Back View</button>
+<button id="side">Side View</button>
+<button id="face">Face Close-up</button>
+<button id="full">Full Body</button>
+<button id="grid">Show / Hide Grid</button>
+</details>
+
+<details>
+<summary>Import & Export</summary>
+<label>Import original MakeHuman OBJ</label>
+<input id="file" type="file" accept=".obj">
+<button id="export">Export Character OBJ</button>
+<button id="save">Save Character Project</button>
+<label>Open Character Project</label>
+<input id="project" type="file" accept=".json">
+</details>
+
+<button id="reset">Reset All Adjustments</button>
+
+<details open>
+<summary>MANUAL POSE STUDIO</summary>
+<button id="buildRig">Build Character Skeleton</button>
+<p id="rigStatus">Build skeleton after sculpting.</p>
+<label>Selected Joint</label>
+<select id="joint"></select>
+<label>X Rotation <span id="rxv">0°</span></label>
+<input id="rx" type="range" min="-180" max="180" value="0">
+<label>Y Rotation <span id="ryv">0°</span></label>
+<input id="ry" type="range" min="-180" max="180" value="0">
+<label>Z Rotation <span id="rzv">0°</span></label>
+<input id="rz" type="range" min="-180" max="180" value="0">
+<button id="showRig">Show / Hide Skeleton</button>
+<button id="resetJoint">Reset Joint</button>
+<button id="resetPose">Reset Full Pose</button>
+<label>Move Left / Right</label>
+<input id="moveX" type="range" min="-3" max="3" step=".01" value="0">
+<label>Move Up / Down</label>
+<input id="moveY" type="range" min="0" max="3" step=".01" value="0">
+<label>Move Forward / Backward</label>
+<input id="moveZ" type="range" min="-3" max="3" step=".01" value="0">
+<button id="savePose">Save Pose</button>
+<label>Open Saved Pose</label>
+<input id="loadPose" type="file" accept=".json">
+<button id="exportPose">Export Posed Character</button>
+<button id="exitPose">Return to Sculpting</button>
+</details></aside>
+<div id="view">
+<div id="info">KUMAR STUDIO<br>Character Sculpting</div>
+</div>
+</main>
+
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+
+const $=id=>document.getElementById(id);
+const root='https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/';
+const api='https://api.github.com/repos/makehumancommunity/makehuman/contents/makehuman/data/targets/';
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0c1220);
+const camera=new THREE.PerspectiveCamera(40,1,.01,100);
+camera.position.set(0,1.15,3.6);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+$('view').appendChild(renderer.domElement);
+
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0,.9,0);
+controls.enableDamping=true;
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x687084,2));
+
+const key=new THREE.DirectionalLight(0xffffff,2.5);
+key.position.set(3,5,4);
+scene.add(key);
+
+const fill=new THREE.DirectionalLight(0xddeeff,1);
+fill.position.set(-3,2,2);
+scene.add(fill);
+
+const rim=new THREE.DirectionalLight(0xffffff,1.5);
+rim.position.set(0,3,-4);
+scene.add(rim);
+
+const grid=new THREE.GridHelper(10,20);
+scene.add(grid);
+
+const material=new THREE.MeshStandardMaterial({
+color:0xd9ad94,
+roughness:.8,
+side:THREE.DoubleSide
+});
+
+let mesh,base,indices,unitScale=1;
+let generation=0,requestId=0;
+let morphs=new Map();
+let cache=new Map();
+let currentFiles=[];
+let presetName=null;
+let updatePending=false;
+let originalBase=false;
+
+function status(s){
+$('status').textContent=s;
+}
+
+async function fetchText(url){
+const r=await fetch(url);
+if(!r.ok)throw Error('Download failed: '+r.status);
+return r.text();
+}
+
+function parseOBJ(text){
+const verts=[],faces=[];
+let group='',hasBody=false;
+for(const raw of text.split(/\r?\n/)){
+const p=raw.trim().split(/\s+/);
+if(p[0]==='v'){
+verts.push(...p.slice(1,4).map(Number));
+}
+if(p[0]==='g'){
+group=p.slice(1).join(' ');
+if(group==='body')hasBody=true;
+}
+if(p[0]==='f'){
+const ids=p.slice(1).map(x=>{
+const n=parseInt(x.split('/')[0]);
+return n<0?verts.length/3+n:n-1;
+});
+faces.push({group,ids});
+}
+}
+const tris=[];
+for(const f of faces){
+if(hasBody&&f.group!=='body')continue;
+for(let i=1;i<f.ids.length-1;i++){
+tris.push(f.ids[0],f.ids[i],f.ids[i+1]);
+}
+}
+if(!verts.length||!tris.length)throw Error('Invalid OBJ');
+return {verts,tris};
+}
+
+function bounds(arr){
+const box=new THREE.Box3();
+const v=new THREE.Vector3();
+for(const i of indices){
+v.fromArray(arr,i*3);
+box.expandByPoint(v);
+}
+return box;
+}
+
+function loadOBJ(text,official=false){
+const d=parseOBJ(text);
+generation++;
+originalBase=official;
+presetName=null;
+if(mesh){
+scene.remove(mesh);
+mesh.geometry.dispose();
+}
+base=new Float32Array(d.verts);
+indices=d.tris;
+morphs.clear();
+
+unitScale=1.8/bounds(base).getSize(new THREE.Vector3()).y;
+
+const geo=new THREE.BufferGeometry();
+geo.setAttribute('position',
+new THREE.BufferAttribute(base.slice(),3));
+geo.setIndex(indices);
+
+mesh=new THREE.Mesh(geo,material);
+scene.add(mesh);
+update();
+renderCatalog();
+status('Human model ready');
+}
+
+function update(){
+if(!mesh)return;
+
+const p=mesh.geometry.attributes.position;
+p.array.set(base);
+
+for(const m of morphs.values()){
+if(!m.value)continue;
+for(const d of m.data){
+const i=d[0]*3;
+p.array[i]+=d[1]*m.value;
+p.array[i+1]+=d[2]*m.value;
+p.array[i+2]+=d[3]*m.value;
+}
+}
+
+p.needsUpdate=true;
+mesh.geometry.computeVertexNormals();
+mesh.geometry.computeBoundingSphere();
+
+const box=bounds(p.array);
+const center=box.getCenter(new THREE.Vector3());
+
+mesh.scale.set(
+unitScale*Number($('width').value),
+unitScale*Number($('height').value)/180,
+unitScale*Number($('depth').value)
+);
+
+mesh.position.set(
+-center.x*mesh.scale.x,
+-box.min.y*mesh.scale.y,
+-center.z*mesh.scale.z
+);
+
+const cm=box.getSize(new THREE.Vector3()).y*mesh.scale.y*100;
+$('heightValue').textContent=Math.round(cm)+' cm';
+}
+
+function scheduleUpdate(){
+if(updatePending)return;
+updatePending=true;
+requestAnimationFrame(()=>{
+updatePending=false;
+update();
+});
+}
+
+function parseTarget(text){
+const data=[];
+for(const raw of text.split(/\r?\n/)){
+const line=raw.trim();
+if(!line||line.startsWith('#'))continue;
+const a=line.split(/\s+/).map(Number);
+if(a.length>=4&&a.slice(0,4).every(Number.isFinite)&&
+Number.isInteger(a[0])&&a[0]>=0&&a[0]<base.length/3){
+data.push(a.slice(0,4));
+}
+}
+if(!data.length)throw Error('Invalid morph target');
+return data;
+}
+
+async function getMorph(path){
+if(!mesh)throw Error('Load human first');
+if(!originalBase)throw Error('Use official MakeHuman base for morphing');
+if(morphs.has(path))return morphs.get(path);
+
+const g=generation;
+const text=await fetchText(root+'targets/'+path);
+if(g!==generation)throw Error('Model changed');
+
+if(morphs.has(path))return morphs.get(path);
+
+const m={data:parseTarget(text),value:0};
+morphs.set(path,m);
+return m;
+}
+
+const categories=[
+['bodyshapes','Body Shape'],
+['armslegs','Arms & Legs'],
+['torso','Torso & Shoulders'],
+['hip','Hip & Waist'],
+['breast','Chest'],
+['buttocks','Glutes'],
+['head','Head & Face'],
+['eyes','Eyes'],
+['eyebrows','Eyebrows'],
+['nose','Nose'],
+['mouth','Lips & Mouth'],
+['chin','Chin & Jaw'],
+['cheek','Cheeks'],
+['forehead','Forehead'],
+['ears','Ears'],
+['neck','Neck']
+];
+
+for(const [id,name] of categories){
+const o=document.createElement('option');
+o.value=id;
+o.textContent=name;
+$('category').appendChild(o);
+}
+
+function friendly(name){
+return name.replace(/\.target$/,'')
+.replace(/breast-dist/g,'Chest Spacing')
+.replace(/breast-point/g,'Breast Projection')
+.replace(/breast-trans/g,'Vertical Position')
+.replace(/maxcup/g,'Larger Cup')
+.replace(/mincup/g,'Smaller Cup')
+.replace(/maxfirmness/g,'Higher Firmness')
+.replace(/minfirmness/g,'Lower Firmness')
+.replace(/incr/g,'Increase')
+.replace(/decr/g,'Decrease')
+.replace(/trans/g,'Position')
+.replace(/scale/g,'Size')
+.replace(/vert/g,'Vertical')
+.replace(/horiz/g,'Horizontal')
+.replace(/-/g,' ')
+.replace(/\b\w/g,c=>c.toUpperCase());
+}
+
+async function loadCategory(){
+const id=++requestId;
+const c=$('category').value;
+$('catalog').replaceChildren();
+$('libraryStatus').textContent='Loading controls...';
+
+try{
+let list=cache.get(c);
+if(!list){
+const r=await fetch(api+c);
+if(!r.ok)throw Error('Category unavailable: '+r.status);
+list=await r.json();
+cache.set(c,list);
+}
+if(id!==requestId)return;
+
+currentFiles=list.filter(f=>
+f.name.endsWith('.target')&&
+!/baby|child/i.test(f.name)
+).map(f=>({
+name:f.name,
+path:c+'/'+f.name
+}));
+
+renderCatalog();
+}catch(e){
+if(id!==requestId)return;
+currentFiles=[];
+$('libraryStatus').textContent=e.message;
+}
+}
+
+function renderCatalog(){
+$('catalog').replaceChildren();
+const query=$('search').value.toLowerCase();
+const files=currentFiles.filter(f=>
+(friendly(f.name)+' '+f.name).toLowerCase().includes(query)
+);
+
+$('libraryStatus').textContent=files.length+' controls';
+
+for(const f of files){
+const wrap=document.createElement('div');
+wrap.className='control';
+
+const line=document.createElement('div');
+line.className='line';
+
+const name=document.createElement('span');
+name.textContent=friendly(f.name);
+
+const value=document.createElement('span');
+value.className='value';
+
+const slider=document.createElement('input');
+slider.type='range';
+slider.min=0;
+slider.max=1;
+slider.step=.01;
+slider.value=morphs.get(f.path)?.value||0;
+
+value.textContent=Math.round(slider.value*100)+'%';
+
+const reset=document.createElement('button');
+reset.className='small';
+reset.textContent='↺';
+
+let pending=null;
+
+async function change(){
+value.textContent=Math.round(slider.value*100)+'%';
+try{
+if(!pending)pending=getMorph(f.path);
+const m=await pending;
+m.value=Number(slider.value);
+scheduleUpdate();
+}catch(e){
+pending=null;
+status(e.message);
+slider.value=0;
+value.textContent='0%';
+}
+}
+
+slider.oninput=change;
+
+reset.onclick=()=>{
+slider.value=0;
+value.textContent='0%';
+const m=morphs.get(f.path);
+if(m){m.value=0;scheduleUpdate()}
+};
+
+line.append(name,value,reset);
+wrap.append(line,slider);
+$('catalog').appendChild(wrap);
+}
+}
+
+$('category').onchange=loadCategory;
+$('search').oninput=renderCatalog;
+
+$('load').onclick=async()=>{
+try{
+status('Loading official human mesh...');
+loadOBJ(await fetchText(root+'3dobjs/base.obj'),true);
+await loadCategory();
+}catch(e){status(e.message)}
+};
+
+$('preset').onclick=async()=>{
+try{
+const path='macrodetails/asian-'+$('gender').value+'-young.target';
+const m=await getMorph(path);
+
+if(presetName&&morphs.has(presetName)){
+morphs.get(presetName).value=0;
+}
+
+m.value=1;
+presetName=path;
+update();
+status('Adult preset applied');
+}catch(e){status(e.message)}
+};
+
+$('file').onchange=async e=>{
+try{
+const f=e.target.files[0];
+if(f)loadOBJ(await f.text(),false);
+}catch(e){status(e.message)}
+};
+
+for(const id of ['height','width','depth']){
+$(id).oninput=scheduleUpdate;
+}
+
+$('skin').oninput=e=>material.color.set(e.target.value);
+$('roughness').oninput=e=>material.roughness=Number(e.target.value);
+
+function view(x,y,z,targetY){
+camera.position.set(x,y,z);
+controls.target.set(0,targetY,0);
+controls.update();
+}
+
+$('front').onclick=()=>view(0,1.1,3.6,.9);
+$('back').onclick=()=>view(0,1.1,-3.6,.9);
+$('side').onclick=()=>view(3.6,1.1,0,.9);
+$('full').onclick=()=>view(0,1.1,3.6,.9);
+$('face').onclick=()=>{
+const h=mesh?bounds(mesh.geometry.attributes.position.array).getSize(new THREE.Vector3()).y*mesh.scale.y:1.8;
+view(0,h-.12,.65,h-.12);
+};
+$('grid').onclick=()=>grid.visible=!grid.visible;
+
+$('reset').onclick=()=>{
+for(const m of morphs.values())m.value=0;
+presetName=null;
+$('height').value=180;
+$('width').value=1;
+$('depth').value=1;
+$('skin').value='#d9ad94';
+$('roughness').value=.8;
+material.color.set('#d9ad94');
+material.roughness=.8;
+renderCatalog();
+update();
+status('Character reset');
+};
+
+function download(name,text,type){
+const url=URL.createObjectURL(new Blob([text],{type}));
+const a=document.createElement('a');
+a.href=url;
+a.download=name;
+document.body.appendChild(a);
+a.click();
+a.remove();
+setTimeout(()=>URL.revokeObjectURL(url),3000);
+}
+
+$('export').onclick=()=>{
+if(!mesh)return;
+update();
+const p=mesh.geometry.attributes.position.array;
+const out=['# Kumar Studio V4.9.3 Hand and Archery Studio Character'];
+for(let i=0;i<p.length;i+=3){
+out.push('v '+
+(p[i]*mesh.scale.x+mesh.position.x)+' '+
+(p[i+1]*mesh.scale.y+mesh.position.y)+' '+
+(p[i+2]*mesh.scale.z+mesh.position.z));
+}
+for(let i=0;i<indices.length;i+=3){
+out.push('f '+(indices[i]+1)+' '+
+(indices[i+1]+1)+' '+(indices[i+2]+1));
+}
+download('Kumar-Character.obj',out.join('\n'),'text/plain');
+};
+
+$('save').onclick=()=>{
+if(!mesh||!originalBase){
+status('Project saving requires official base mesh');
+return;
+}
+const project={
+version:'4.5',
+height:$('height').value,
+width:$('width').value,
+depth:$('depth').value,
+skin:$('skin').value,
+roughness:$('roughness').value,
+preset:presetName,
+morphs:[...morphs.entries()]
+.filter(([k,m])=>m.value!==0)
+.map(([path,m])=>({path,value:m.value}))
+};
+download('Kumar-Character.json',
+JSON.stringify(project,null,2),'application/json');
+};
+
+$('project').onchange=async e=>{
+try{
+const file=e.target.files[0];
+if(!file)return;
+const p=JSON.parse(await file.text());
+if(p.version!=='4.5'||!Array.isArray(p.morphs)){
+throw Error('Invalid project');
+}
+
+status('Restoring character...');
+loadOBJ(await fetchText(root+'3dobjs/base.obj'),true);
+
+for(const id of ['height','width','depth','skin','roughness']){
+if(p[id]!==undefined)$(id).value=p[id];
+}
+
+material.color.set($('skin').value);
+material.roughness=Number($('roughness').value);
+
+for(const item of p.morphs){
+if(typeof item.path!=='string'||
+!/^[a-zA-Z0-9_/-]+\.target$/.test(item.path))continue;
+
+const m=await getMorph(item.path);
+m.value=THREE.MathUtils.clamp(Number(item.value)||0,0,1);
+}
+
+presetName=p.preset||null;
+update();
+renderCatalog();
+status('Character project restored');
+}catch(err){status(err.message)}
+};
+
+function resize(){
+const w=$('view').clientWidth;
+const h=$('view').clientHeight;
+if(!w||!h)return;
+renderer.setSize(w,h);
+camera.aspect=w/h;
+camera.updateProjectionMatrix();
+}
+
+new ResizeObserver(resize).observe($('view'));
+resize();
+
+
+let posed=null;
+let rigHelper=null;
+let rigSource=null;
+let bones=[];
+let segments=[];
+let rigGeneration=-1;
+let rigOrigin=new THREE.Vector3();
+
+function rigStatus(s){
+$('rigStatus').textContent=s;
+}
+
+function clearRig(){
+if(posed){
+scene.remove(posed);
+posed.geometry.dispose();
+posed.skeleton.dispose();
+posed=null;
+}
+if(rigHelper){
+scene.remove(rigHelper);
+rigHelper.geometry.dispose();
+rigHelper.material.dispose();
+rigHelper=null;
+}
+if(rigSource)rigSource.visible=true;
+rigSource=null;
+bones=[];
+segments=[];
+$('joint').replaceChildren();
+}
+
+
+let officialRigData=null;
+let officialWeightData=null;
+let rigBusy=false;
+
+async function prepareOfficialRig(){
+
+if(officialRigData&&officialWeightData)return;
+
+const path=root+'rigs/';
+
+const files=await Promise.all([
+fetch(path+'default.mhskel'),
+fetch(path+'default_weights.mhw')
+]);
+
+if(files.some(r=>!r.ok))
+throw Error('Official rig download failed');
+
+const data=await Promise.all(
+files.map(r=>r.json())
+);
+
+officialRigData=data[0];
+officialWeightData=data[1];
+}
+
+function createRig(){
+
+if(!mesh)throw Error('Load human first');
+
+if(!originalBase)
+throw Error('Use original MakeHuman model');
+
+if(!officialRigData||!officialWeightData)
+throw Error('Official rig is not loaded');
+
+clearRig();
+update();
+mesh.updateMatrixWorld(true);
+
+const geo=mesh.geometry.clone();
+geo.applyMatrix4(mesh.matrixWorld);
+
+const p=geo.attributes.position;
+const definitions=officialRigData.bones;
+const joints=officialRigData.joints;
+const weights=officialWeightData.weights;
+
+const boneMap=new Map();
+const boneIndex=new Map();
+const jointCache=new Map();
+
+function jointPosition(name){
+
+if(jointCache.has(name))
+return jointCache.get(name).clone();
+
+const ids=joints[name];
+
+if(!Array.isArray(ids)||!ids.length)
+throw Error('Missing joint: '+name);
+
+const result=new THREE.Vector3();
+const v=new THREE.Vector3();
+
+for(const id of ids){
+
+if(!Number.isInteger(id)||id<0||id>=p.count)
+throw Error('Incompatible mesh vertex numbering');
+
+v.fromBufferAttribute(p,id);
+result.add(v);
+}
+
+result.divideScalar(ids.length);
+jointCache.set(name,result.clone());
+
+return result;
+}
+
+function addBone(name){
+
+if(boneMap.has(name))
+return boneMap.get(name);
+
+const def=definitions[name];
+
+if(!def)
+throw Error('Missing bone: '+name);
+
+const parent=def.parent?
+addBone(def.parent):null;
+
+const position=jointPosition(def.head);
+const b=new THREE.Bone();
+
+b.name=name;
+
+if(parent){
+
+const parentPosition=jointPosition(
+definitions[def.parent].head
+);
+
+b.position.copy(position)
+.sub(parentPosition);
+
+parent.add(b);
+
+}else{
+
+b.position.copy(position);
+}
+
+boneIndex.set(name,bones.length);
+boneMap.set(name,b);
+bones.push(b);
+
+return b;
+}
+
+for(const name of Object.keys(definitions)){
+addBone(name);
+}
+
+const rootBone=boneMap.get('root');
+
+if(!rootBone)
+throw Error('Root bone missing');
+
+const influences=Array.from(
+{length:p.count},()=>[]
+);
+
+for(const [name,entries] of Object.entries(weights)){
+
+if(!boneIndex.has(name))continue;
+
+const index=boneIndex.get(name);
+
+for(const entry of entries){
+
+const id=entry[0];
+const weight=entry[1];
+
+if(!Number.isInteger(id)||id<0||id>=p.count)
+throw Error('Weight topology mismatch');
+
+if(weight>0&&Number.isFinite(weight)){
+influences[id].push([index,weight]);
+}
+}
+}
+
+const visibleVertices=new Set(
+geo.index.array
+);
+
+let missing=0;
+
+for(const id of visibleVertices){
+if(!influences[id].length)missing++;
+}
+
+if(missing>0)
+throw Error('Unweighted body vertices: '+missing);
+
+const skinIndices=new Uint16Array(p.count*4);
+const skinWeights=new Float32Array(p.count*4);
+
+for(let i=0;i<p.count;i++){
+
+const list=influences[i]
+.sort((a,b)=>b[1]-a[1])
+.slice(0,4);
+
+if(!list.length){
+
+skinIndices[i*4]=boneIndex.get('root');
+skinWeights[i*4]=1;
+continue;
+}
+
+const total=list.reduce(
+(sum,item)=>sum+item[1],0
+);
+
+for(let k=0;k<list.length;k++){
+
+skinIndices[i*4+k]=list[k][0];
+skinWeights[i*4+k]=list[k][1]/total;
+}
+}
+
+geo.setAttribute(
+'skinIndex',
+new THREE.Uint16BufferAttribute(skinIndices,4)
+);
+
+geo.setAttribute(
+'skinWeight',
+new THREE.Float32BufferAttribute(skinWeights,4)
+);
+
+posed=new THREE.SkinnedMesh(geo,material);
+
+posed.name='MakeHuman Anatomical Character';
+posed.add(rootBone);
+scene.add(posed);
+posed.updateMatrixWorld(true);
+
+posed.bind(new THREE.Skeleton(bones));
+posed.frustumCulled=false;
+
+rigHelper=new THREE.SkeletonHelper(posed);
+scene.add(rigHelper);
+
+rigSource=mesh;
+rigSource.visible=false;
+rigGeneration=generation;
+rigOrigin.copy(rootBone.position);
+
+const friendly={
+'root':'Pelvis / Root',
+'head':'Head',
+'neck01':'Neck',
+'upperarm01.L':'Left Shoulder',
+'upperarm01.R':'Right Shoulder',
+'lowerarm01.L':'Left Elbow',
+'lowerarm01.R':'Right Elbow',
+'wrist.L':'Left Wrist',
+'wrist.R':'Right Wrist',
+'upperleg01.L':'Left Hip',
+'upperleg01.R':'Right Hip',
+'lowerleg01.L':'Left Knee',
+'lowerleg01.R':'Right Knee',
+'foot.L':'Left Foot',
+'foot.R':'Right Foot'
+};
+
+$('joint').replaceChildren();
+
+const ordered=[
+...Object.keys(friendly),
+...bones.map(b=>b.name)
+.filter(n=>!friendly[n])
+];
+
+for(const name of ordered){
+
+if(!boneIndex.has(name))continue;
+
+const option=document.createElement('option');
+
+option.value=boneIndex.get(name);
+option.textContent=friendly[name]||name;
+
+$('joint').appendChild(option);
+}
+
+for(const id of ['moveX','moveY','moveZ']){
+$(id).value=0;
+}
+
+syncJoint();
+
+rigStatus(
+'Official MakeHuman rig ready: '+
+bones.length+' bones'
+);
+}
+
+function selectedBone(){
+return bones[Number($('joint').value)];
+}
+
+function syncJoint(){
+const b=selectedBone();
+if(!b)return;
+for(const axis of ['x','y','z']){
+const val=Math.round(
+THREE.MathUtils.radToDeg(b.rotation[axis]));
+$('r'+axis).value=val;
+$('r'+axis+'v').textContent=val+'°';
+}
+}
+
+function rotateJoint(){
+const b=selectedBone();
+if(!b)return;
+for(const axis of ['x','y','z']){
+const val=Number($('r'+axis).value);
+b.rotation[axis]=THREE.MathUtils.degToRad(val);
+$('r'+axis+'v').textContent=val+'°';
+}
+}
+
+function moveCharacter(){
+if(!posed)return;
+bones[0].position.copy(rigOrigin).add(
+new THREE.Vector3(
+Number($('moveX').value),
+Number($('moveY').value),
+Number($('moveZ').value)));
+}
+
+
+$('buildRig').onclick=async()=>{
+if(rigBusy)return;
+rigBusy=true;
+
+try{
+rigStatus('Loading official anatomical rig...');
+await prepareOfficialRig();
+createRig();
+}catch(e){
+clearRig();
+rigStatus(e.message);
+}finally{
+rigBusy=false;
+}
+};
+$('joint').onchange=syncJoint;
+
+for(const axis of ['x','y','z']){
+$('r'+axis).oninput=rotateJoint;
+}
+
+for(const id of ['moveX','moveY','moveZ']){
+$(id).oninput=moveCharacter;
+}
+
+$('showRig').onclick=()=>{
+if(rigHelper)rigHelper.visible=!rigHelper.visible;
+};
+
+$('resetJoint').onclick=()=>{
+const b=selectedBone();
+if(b){b.rotation.set(0,0,0);syncJoint()}
+};
+
+$('resetPose').onclick=()=>{
+bones.forEach(b=>b.rotation.set(0,0,0));
+for(const id of ['moveX','moveY','moveZ']){
+$(id).value=0;
+}
+moveCharacter();
+syncJoint();
+};
+
+$('exitPose').onclick=()=>{
+clearRig();
+rigStatus('Sculpting mode. Rebuild rig after changes.');
+};
+
+$('savePose').onclick=()=>{
+if(!posed)return;
+const data={
+version:'4.6',
+joints:bones.map(b=>({
+name:b.name,
+rotation:[b.rotation.x,b.rotation.y,b.rotation.z]
+})),
+movement:['moveX','moveY','moveZ']
+.map(id=>Number($(id).value))
+};
+download('Kumar-Pose.json',
+JSON.stringify(data,null,2),'application/json');
+};
+
+$('loadPose').onchange=async e=>{
+try{
+if(!e.target.files[0])return;
+const data=JSON.parse(
+await e.target.files[0].text());
+
+if(data.version!=='4.6'||
+!Array.isArray(data.joints))
+throw Error('Invalid pose file');
+
+if(!posed){await prepareOfficialRig();createRig();}
+
+for(const item of data.joints){
+const b=bones.find(b=>b.name===item.name);
+if(b&&Array.isArray(item.rotation)&&
+item.rotation.length===3&&
+item.rotation.every(Number.isFinite)){
+b.rotation.set(...item.rotation);
+}
+}
+
+['moveX','moveY','moveZ'].forEach((id,i)=>{
+$(id).value=data.movement?.[i]||0;
+});
+
+moveCharacter();
+syncJoint();
+rigStatus('Saved pose restored');
+}catch(err){rigStatus(err.message)}
+};
+
+$('exportPose').onclick=()=>{
+if(!posed)return;
+posed.updateMatrixWorld(true);
+posed.skeleton.update();
+
+const p=posed.geometry.attributes.position;
+const ix=posed.geometry.index.array;
+const v=new THREE.Vector3();
+const out=['# Kumar Studio V4.6 Pose'];
+
+for(let i=0;i<p.count;i++){
+posed.getVertexPosition(i,v);
+v.applyMatrix4(posed.matrixWorld);
+out.push('v '+v.x+' '+v.y+' '+v.z);
+}
+
+for(let i=0;i<ix.length;i+=3){
+out.push('f '+(ix[i]+1)+' '+
+(ix[i+1]+1)+' '+(ix[i+2]+1));
+}
+
+download('Kumar-Posed-Character.obj',
+out.join('\n'),'text/plain');
+};
+
+const originalUpdate=update;
+update=function(){
+if(posed){
+clearRig();
+rigStatus('Shape changed. Rebuild skeleton.');
+}
+originalUpdate();
+};
+
+
+
+const anatomyPanel=document.createElement('details');
+
+anatomyPanel.open=true;
+
+anatomyPanel.innerHTML=
+'<summary>ANATOMICAL JOINT STUDIO</summary>';
+
+$('buildRig').closest('details')
+.insertAdjacentElement('afterend',anatomyPanel);
+
+const anatomyStatus=document.createElement('p');
+
+anatomyStatus.textContent='Build skeleton first';
+
+anatomyPanel.appendChild(anatomyStatus);
+
+let restRig=null;
+
+const rest=new Map();
+
+const anatomySliders=[];
+
+function getBone(name){
+return bones.find(b=>b.name===name);
+}
+
+function captureAnatomy(){
+
+rest.clear();
+
+if(!posed)return;
+
+posed.updateMatrixWorld(true);
+
+for(const b of bones){
+
+rest.set(
+b.name,
+b.getWorldPosition(new THREE.Vector3())
+);
+
+}
+
+restRig=posed;
+}
+
+function direction(a,b){
+
+if(!rest.has(a)||!rest.has(b))return null;
+
+return rest.get(b).clone()
+.sub(rest.get(a)).normalize();
+}
+
+function forward(){
+
+const d=direction('foot.L','toe2-1.L');
+
+if(d){
+
+d.y=0;
+
+if(d.lengthSq()>0.000001)
+return d.normalize();
+
+}
+
+return new THREE.Vector3(0,0,1);
+}
+
+function bend(name,next,value,target){
+
+const bone=getBone(name);
+
+const dir=direction(name,next);
+
+if(!bone||!dir)return;
+
+const axis=new THREE.Vector3()
+.crossVectors(dir,target);
+
+if(axis.lengthSq()<0.000001)return;
+
+bone.quaternion.setFromAxisAngle(
+axis.normalize(),
+THREE.MathUtils.degToRad(value)
+);
+}
+
+function addControl(label,min,max,action){
+
+const title=document.createElement('label');
+
+const value=document.createElement('span');
+
+title.textContent=label+' ';
+
+value.textContent='0°';
+
+title.appendChild(value);
+
+const slider=document.createElement('input');
+
+slider.type='range';
+slider.min=min;
+slider.max=max;
+slider.step=1;
+slider.value=0;
+
+slider.oninput=()=>{
+
+if(!posed||restRig!==posed){
+
+slider.value=0;
+
+anatomyStatus.textContent=
+'Build Character Skeleton first';
+
+return;
+}
+
+const angle=Number(slider.value);
+
+action(angle);
+
+value.textContent=angle+'°';
+
+syncJoint();
+
+anatomyStatus.textContent=
+'Anatomical controls active';
+
+};
+
+anatomyPanel.appendChild(title);
+
+anatomyPanel.appendChild(slider);
+
+anatomySliders.push({slider,value});
+
+}
+
+
+
+const fingerValues={L:0,R:0};
+
+const handState={
+L:{curl:[0,0,0,0,0],spread:0,opposition:0},
+R:{curl:[0,0,0,0,0],spread:0,opposition:0}
+};
+
+
+const handInputs={L:[],R:[]};
+
+handState.L.mode='normal';
+handState.R.mode='normal';
+
+const jointAdjust={
+L:Array.from({length:5},()=>[0,0,0]),
+R:Array.from({length:5},()=>[0,0,0])
+};
+
+const jointInputs={L:[],R:[]};
+
+function clearJointAdjust(side){
+
+for(const row of jointAdjust[side])
+row.fill(0);
+
+for(const item of jointInputs[side]){
+
+item.input.value=0;
+item.output.textContent='0°';
+
+}
+
+}
+
+
+const handNames=[
+'Thumb','Index','Middle','Ring','Little'
+];
+
+function fingerName(side,f,j){
+return 'finger'+f+'-'+j+'.'+side;
+}
+
+function handFrame(side){
+
+const wrist=rest.get('wrist.'+side);
+
+const index=rest.get(
+fingerName(side,2,1)
+);
+
+const middle=rest.get(
+fingerName(side,3,1)
+);
+
+const little=rest.get(
+fingerName(side,5,1)
+);
+
+const thumb=rest.get(
+fingerName(side,1,2)
+);
+
+if(!wrist||!index||!middle||!little)
+return null;
+
+const along=middle.clone()
+.sub(wrist).normalize();
+
+const across=index.clone()
+.sub(little).normalize();
+
+const normal=new THREE.Vector3()
+.crossVectors(along,across)
+.normalize();
+
+const desired=forward().negate();
+
+if(normal.dot(desired)<0)
+normal.negate();
+
+return {
+wrist,index,middle,little,
+thumb,along,across,normal
+};
+
+}
+
+function fingerAxis(side,f,frame){
+
+const d=direction(
+fingerName(side,f,1),
+fingerName(side,f,2)
+);
+
+if(!d)return null;
+
+const inward=frame.normal.clone()
+.addScaledVector(
+d,-frame.normal.dot(d)
+).normalize();
+
+const axis=new THREE.Vector3()
+.crossVectors(d,inward);
+
+if(axis.lengthSq()<0.000001)
+return null;
+
+return axis.normalize();
+
+}
+
+function applyHand(side){
+
+if(!posed||restRig!==posed)return;
+
+const frame=handFrame(side);
+
+if(!frame)return;
+
+const state=handState[side];
+
+const rad=THREE.MathUtils.degToRad;
+
+for(let f=2;f<=5;f++){
+
+const axis=fingerAxis(side,f,frame);
+
+if(!axis)continue;
+
+const curl=state.curl[f-1]/100;
+
+const angles=[75,100,65];
+
+for(let j=1;j<=3;j++){
+
+const bone=getBone(
+fingerName(side,f,j)
+);
+
+if(!bone)continue;
+
+bone.quaternion.setFromAxisAngle(
+axis,rad(angles[j-1]*curl)
+);
+
+if(j===1){
+
+const spreadAngle=
+(f-3.5)*state.spread*0.12;
+
+const q=new THREE.Quaternion()
+.setFromAxisAngle(
+frame.normal,rad(spreadAngle)
+);
+
+bone.quaternion.premultiply(q);
+
+}
+
+}
+
+}
+
+
+
+const thumbCurl=THREE.MathUtils.clamp(
+state.curl[0]/100,0,1
+);
+
+const fistMode=state.mode==="fist";
+const opposition=THREE.MathUtils.clamp(
+state.opposition/100,0,1
+);
+
+const t1=getBone(
+fingerName(side,1,1)
+);
+
+const t2=getBone(
+fingerName(side,1,2)
+);
+
+const t3=getBone(
+fingerName(side,1,3)
+);
+
+if(t1&&t2&&t3){
+
+t1.quaternion.identity();
+t2.quaternion.identity();
+t3.quaternion.identity();
+
+posed.updateMatrixWorld(true);
+
+const wristBone=getBone('wrist.'+side);
+
+if(wristBone){
+
+const wristRotation=
+wristBone.getWorldQuaternion(
+new THREE.Quaternion()
+);
+
+const worldAcross=frame.across.clone()
+.applyQuaternion(wristRotation)
+.normalize();
+
+const worldAlong=frame.along.clone()
+.applyQuaternion(wristRotation)
+.normalize();
+
+const worldNormal=frame.normal.clone()
+.applyQuaternion(wristRotation)
+.normalize();
+
+const indexBone=getBone(
+fingerName(side,2,2)
+);
+
+const middleBone=getBone(
+fingerName(side,3,2)
+);
+
+const p1=t1.getWorldPosition(
+new THREE.Vector3()
+);
+
+const p2=t2.getWorldPosition(
+new THREE.Vector3()
+);
+
+const p3=t3.getWorldPosition(
+new THREE.Vector3()
+);
+
+const len1=p1.distanceTo(p2);
+const len2=p2.distanceTo(p3);
+
+function aimThumbBone(
+bone,restDirection,target,strength
+){
+
+if(!bone.parent)return;
+
+if(target.lengthSq()<0.000001)
+return;
+
+const parentQ=
+bone.parent.getWorldQuaternion(
+new THREE.Quaternion()
+);
+
+const localTarget=target.clone()
+.applyQuaternion(parentQ.invert())
+.normalize();
+
+const rotation=new THREE.Quaternion()
+.setFromUnitVectors(
+restDirection.clone().normalize(),
+localTarget
+);
+
+bone.quaternion.identity()
+.slerp(
+rotation,
+THREE.MathUtils.clamp(strength,0,1)
+);
+
+posed.updateMatrixWorld(true);
+
+}
+
+const d1=t2.position.clone()
+.normalize();
+
+const d2=t3.position.clone()
+.normalize();
+
+const acrossPalm=worldAcross.clone()
+.negate();
+
+const baseTarget=acrossPalm.clone()
+.multiplyScalar(fistMode?0.28:0.72)
+.addScaledVector(worldAlong,fistMode?0.85:0.55)
+.addScaledVector(worldNormal,fistMode?0.38:0.48)
+.normalize();
+
+aimThumbBone(
+t1,d1,baseTarget,opposition
+);
+
+if(indexBone&&middleBone){
+
+const indexPoint=
+indexBone.getWorldPosition(
+new THREE.Vector3()
+);
+
+const middlePoint=
+middleBone.getWorldPosition(
+new THREE.Vector3()
+);
+
+const target=indexPoint.clone()
+.lerp(middlePoint,fistMode?0:0.38);
+
+target.addScaledVector(
+worldNormal,
+Math.max(len2*(fistMode?0.65:0.45),0.002)
+);
+
+const currentJoint=
+t2.getWorldPosition(
+new THREE.Vector3()
+);
+
+const desired=target.clone()
+.sub(currentJoint)
+.normalize();
+
+const gripDirection=
+acrossPalm.clone()
+.multiplyScalar(0.85)
+.addScaledVector(worldAlong,0.20)
+.addScaledVector(worldNormal,0.15)
+.normalize();
+
+desired.lerp(
+gripDirection,fistMode?0:0.25
+).normalize();
+
+aimThumbBone(
+t2,d2,desired,
+Math.max(
+thumbCurl,
+opposition*0.85
+)
+);
+
+}
+
+const parentQ=
+t3.parent.getWorldQuaternion(
+new THREE.Quaternion()
+);
+
+const tipDirection=acrossPalm.clone()
+.multiplyScalar(fistMode?0.35:0.8)
+.addScaledVector(worldNormal,fistMode?-0.25:-0.45)
+.addScaledVector(worldAlong,fistMode?0.65:0.15)
+.normalize();
+
+const localTip=tipDirection.clone()
+.applyQuaternion(parentQ.invert())
+.normalize();
+
+let restTip=d2.clone();
+
+const tipChild=t3.children.find(
+child=>child.isBone
+);
+
+if(tipChild&&
+tipChild.position.lengthSq()>0.000001){
+
+restTip=tipChild.position.clone()
+.normalize();
+
+}
+
+const tipRotation=
+new THREE.Quaternion()
+.setFromUnitVectors(
+restTip,localTip
+);
+
+t3.quaternion.identity()
+.slerp(
+tipRotation,
+thumbCurl*0.85
+);
+
+}
+
+}
+
+
+for(let f=1;f<=5;f++){
+
+for(let j=1;j<=3;j++){
+
+const adjustment=
+jointAdjust[side][f-1][j-1];
+
+if(!adjustment)continue;
+
+const bone=getBone(
+fingerName(side,f,j)
+);
+
+if(!bone)continue;
+
+let axis;
+
+if(f===1){
+
+const d=direction(
+fingerName(side,1,1),
+fingerName(side,1,2)
+);
+
+if(!d)continue;
+
+axis=new THREE.Vector3()
+.crossVectors(d,frame.normal);
+
+}else{
+
+axis=fingerAxis(side,f,frame);
+
+}
+
+if(!axis||
+axis.lengthSq()<0.000001)
+continue;
+
+const q=new THREE.Quaternion()
+.setFromAxisAngle(
+axis.normalize(),
+rad(adjustment)
+);
+
+bone.quaternion.multiply(q);
+
+}
+
+}
+
+posed.updateMatrixWorld(true);
+
+syncJoint();
+
+
+}
+
+function handSlider(
+side,label,min,max,action
+){
+
+const title=document.createElement('label');
+
+const output=document.createElement('span');
+
+title.textContent=label+' : ';
+
+output.textContent='0%';
+
+title.appendChild(output);
+
+const input=document.createElement('input');
+
+input.type='range';
+input.min=min;
+input.max=max;
+input.step=1;
+input.value=0;
+
+input.style.width='100%';
+
+input.oninput=()=>{
+
+if(!posed||restRig!==posed){
+
+input.value=0;
+output.textContent='0%';
+
+anatomyStatus.textContent=
+'Build Character Skeleton first';
+
+return;
+
+}
+
+const v=Number(input.value);
+
+output.textContent=v+'%';
+
+action(v);
+
+applyHand(side);
+
+};
+
+anatomyPanel.appendChild(title);
+anatomyPanel.appendChild(input);
+
+const control={input,output};
+
+handInputs[side].push(control);
+
+return control;
+
+}
+
+function showHandValues(side){
+
+const s=handState[side];
+
+const values=[
+...s.curl,s.spread,s.opposition
+];
+
+for(let i=0;i<values.length;i++){
+
+const c=handInputs[side][i];
+
+if(!c)continue;
+
+c.input.value=values[i];
+
+c.output.textContent=values[i]+'%';
+
+}
+
+}
+
+const gestures={
+
+'Open Hand':[0,0,0,0,0,0,0],
+
+'Closed Fist':[70,100,100,100,100,0,85],
+
+'One Finger':[65,0,100,100,100,0,75],
+
+'Two Fingers':[65,0,0,100,100,15,75],
+
+'Three Fingers':[65,0,0,0,100,10,75],
+
+'Four Fingers':[65,0,0,0,0,10,80],
+
+'Middle Finger':[65,100,0,100,100,0,75],
+
+'Thumbs Up':[0,100,100,100,100,0,0],
+
+'Sword Grip':[50,65,75,80,85,0,65],
+
+'Spear Grip':[45,55,65,70,75,0,60],
+
+'Staff Grip':[40,50,60,65,70,0,55],
+
+'Bow Grip':[35,45,55,60,65,0,45],
+
+
+'Cultivation Seal':[60,0,0,100,100,0,75],
+
+'Arrow - Single Hold':[35,30,85,95,95,0,45],
+
+'Arrow - Two Hold':[40,35,40,90,90,8,50],
+
+'Arrow - Three Hold':[45,40,45,50,90,12,55],
+
+'Arrow - Multiple Hold':[50,55,60,65,70,5,60],
+
+'Arrow - Thumb Index Hold':[35,35,100,100,100,0,45],
+
+'Arrow - Index Middle Hold':[15,35,35,90,95,12,20],
+
+'Arrow - Reverse Hold':[40,55,75,85,90,0,50],
+
+'Arrow - Horizontal Hold':[35,45,65,90,95,0,45],
+
+'Arrow - Vertical Hold':[45,50,70,85,90,5,55],
+
+'Arrow - Quiver Pickup':[25,25,40,65,75,10,35],
+
+'Arrow - Loading':[30,25,55,80,90,10,40],
+
+'Arrow - Two Finger Draw':[20,45,45,90,95,8,25],
+
+'Arrow - Three Finger Draw':[20,45,50,55,95,5,25],
+
+'Arrow - Thumb Draw':[65,65,90,95,95,0,70],
+
+'Arrow - Pinch Grip':[30,30,90,95,95,0,45],
+
+'Arrow - Release':[5,10,10,20,25,20,5],
+
+'Arrow - Spiritual Summoning':[15,15,20,35,45,45,15],
+
+'Arrow - Divine Control':[55,0,0,90,95,5,65],
+
+'Arrow - Floating Gesture':[10,5,15,25,35,55,10],
+
+'Arrow - Custom Grip':[0,0,0,0,0,0,0]
+
+
+};
+
+function setGesture(side,name){
+
+if(!posed||restRig!==posed){
+
+anatomyStatus.textContent=
+'Build Character Skeleton first';
+
+return;
+
+}
+
+
+const g=gestures[name];
+
+handState[side].mode=
+name==='Closed Fist'?'fist':'normal';
+
+clearJointAdjust(side);
+
+
+if(!g)return;
+
+const s=handState[side];
+
+s.curl=g.slice(0,5);
+
+s.spread=g[5];
+
+s.opposition=g[6];
+
+showHandValues(side);
+
+applyHand(side);
+
+anatomyStatus.textContent=
+side+' Hand: '+name;
+
+}
+
+for(const side of ['L','R']){
+
+const label=side==='L'?'Left':'Right';
+
+const heading=document.createElement('h3');
+
+heading.textContent=label+' Body Controls';
+
+anatomyPanel.appendChild(heading);
+
+addControl(label+' Shoulder Lift',0,120,v=>{
+
+bend(
+'upperarm01.'+side,
+'lowerarm01.'+side,
+v,new THREE.Vector3(0,1,0)
+);
+
+});
+
+addControl(label+' Elbow Bend',0,145,v=>{
+
+bend(
+'lowerarm01.'+side,
+'wrist.'+side,
+v,forward()
+);
+
+});
+
+addControl(label+' Knee Bend',0,135,v=>{
+
+bend(
+'lowerleg01.'+side,
+'foot.'+side,
+v,forward().negate()
+);
+
+});
+
+addControl(label+' Forearm Twist',-85,85,v=>{
+
+const bone=getBone('lowerarm02.'+side);
+
+const axis=direction(
+'lowerarm02.'+side,'wrist.'+side
+);
+
+if(bone&&axis){
+
+bone.quaternion.setFromAxisAngle(
+axis,
+THREE.MathUtils.degToRad(v)
+);
+
+}
+
+});
+
+const handHeading=document.createElement('h3');
+
+handHeading.textContent=
+label+' Advanced Hand Studio';
+
+anatomyPanel.appendChild(handHeading);
+
+const preset=document.createElement('select');
+
+preset.style.width='100%';
+
+const placeholder=document.createElement('option');
+
+placeholder.textContent='Select Hand Gesture';
+
+placeholder.value='';
+
+preset.appendChild(placeholder);
+
+for(const name of Object.keys(gestures)){
+
+const option=document.createElement('option');
+
+option.value=name;
+
+option.textContent=name;
+
+preset.appendChild(option);
+
+}
+
+preset.onchange=()=>{
+
+setGesture(side,preset.value);
+
+};
+
+anatomyPanel.appendChild(preset);
+
+for(let i=0;i<5;i++){
+
+handSlider(
+side,label+' '+handNames[i]+' Bend',
+0,100,v=>{
+
+handState[side].curl[i]=v;
+
+});
+
+}
+
+handSlider(
+side,label+' Finger Spread',
+-50,100,v=>{
+
+handState[side].spread=v;
+
+});
+
+handSlider(
+side,label+' Thumb Opposition',
+0,100,v=>{
+
+handState[side].opposition=v;
+
+});
+
+handSlider(
+side,label+' Fist Control',
+0,100,v=>{
+
+const s=handState[side];
+
+
+s.mode='fist';
+
+s.curl=[v*0.70,v,v,v,v];
+
+
+s.opposition=v*0.85;
+
+showHandValues(side);
+
+});
+
+handSlider(
+side,label+' Weapon Grip',
+0,100,v=>{
+
+
+const s=handState[side];
+
+s.mode='normal';
+
+s.curl=[
+v*0.50,
+
+v*0.65,
+v*0.75,
+v*0.80,
+v*0.85
+];
+
+s.opposition=v*0.65;
+
+showHandValues(side);
+
+});
+
+const resetHand=document.createElement('button');
+
+resetHand.textContent='Reset '+label+' Hand';
+
+resetHand.onclick=()=>{
+
+setGesture(side,'Open Hand');
+
+for(const c of handInputs[side]){
+
+c.input.value=0;
+
+c.output.textContent='0%';
+
+}
+
+preset.value='';
+
+};
+
+
+anatomyPanel.appendChild(resetHand);
+
+const advanced=document.createElement('details');
+
+advanced.innerHTML=
+'<summary>Custom Finger Joint Editor</summary>';
+
+anatomyPanel.appendChild(advanced);
+
+for(let f=1;f<=5;f++){
+
+const heading=document.createElement('h4');
+
+heading.textContent=handNames[f-1];
+
+advanced.appendChild(heading);
+
+for(let j=1;j<=3;j++){
+
+const label=document.createElement('label');
+
+const output=document.createElement('span');
+
+label.textContent='Joint '+j+' : ';
+
+output.textContent='0°';
+
+label.appendChild(output);
+
+const input=document.createElement('input');
+
+input.type='range';
+input.min=-45;
+input.max=45;
+input.step=1;
+input.value=0;
+input.style.width='100%';
+
+input.oninput=()=>{
+
+if(!posed||restRig!==posed){
+
+input.value=0;
+return;
+
+}
+
+jointAdjust[side][f-1][j-1]=
+Number(input.value);
+
+output.textContent=input.value+'°';
+
+applyHand(side);
+
+};
+
+advanced.appendChild(label);
+advanced.appendChild(input);
+
+jointInputs[side].push({
+input,output,f,j
+});
+
+}
+
+}
+
+const resetJoints=document.createElement('button');
+
+resetJoints.textContent='Reset Joint Adjustments';
+
+resetJoints.onclick=()=>{
+
+clearJointAdjust(side);
+
+applyHand(side);
+
+};
+
+advanced.appendChild(resetJoints);
+
+const saveGrip=document.createElement('button');
+
+saveGrip.textContent='Save Custom Grip';
+
+saveGrip.onclick=()=>{
+
+if(!posed||restRig!==posed)return;
+
+const data={
+state:handState[side],
+joints:jointAdjust[side]
+};
+
+try{
+
+localStorage.setItem(
+'kumar-custom-grip-'+side,
+JSON.stringify(data)
+);
+
+anatomyStatus.textContent=
+label+' Custom Grip Saved';
+
+}catch(e){
+
+anatomyStatus.textContent=
+'Save failed: '+e.message;
+
+}
+
+};
+
+advanced.appendChild(saveGrip);
+
+const loadGrip=document.createElement('button');
+
+loadGrip.textContent='Load Custom Grip';
+
+loadGrip.onclick=()=>{
+
+if(!posed||restRig!==posed)return;
+
+try{
+
+const raw=localStorage.getItem(
+'kumar-custom-grip-'+side
+);
+
+if(!raw){
+
+anatomyStatus.textContent=
+'No saved custom grip';
+
+return;
+
+}
+
+const data=JSON.parse(raw);
+
+handState[side]=data.state;
+
+jointAdjust[side]=data.joints;
+
+showHandValues(side);
+
+for(const item of jointInputs[side]){
+
+const v=jointAdjust[side]
+[item.f-1][item.j-1];
+
+item.input.value=v;
+
+item.output.textContent=v+'°';
+
+}
+
+applyHand(side);
+
+anatomyStatus.textContent=
+label+' Custom Grip Loaded';
+
+}catch(e){
+
+anatomyStatus.textContent=
+'Load failed: '+e.message;
+
+}
+
+};
+
+advanced.appendChild(loadGrip);
+
+
+}
+
+function resetSliders(){
+for(const side of ["L","R"]){
+handState[side].mode="normal";clearJointAdjust(side);handState[side].curl=[0,0,0,0,0];
+handState[side].spread=0;
+handState[side].opposition=0;
+for(const c of handInputs[side]){
+c.input.value=0;
+c.output.textContent="0%";
+}
+}
+
+
+fingerValues.L=0;
+fingerValues.R=0;
+
+for(const item of anatomySliders){
+
+item.slider.value=0;
+
+item.value.textContent='0°';
+
+}
+
+}
+
+const oldBuild=$('buildRig').onclick;
+
+$('buildRig').onclick=async()=>{
+
+await oldBuild();
+
+if(posed){
+
+captureAnatomy();
+
+resetSliders();
+
+anatomyStatus.textContent=
+'Hand and Archery Studio Ready';
+
+}
+
+};
+
+const oldReset=$('resetPose').onclick;
+
+$('resetPose').onclick=()=>{
+
+oldReset();
+
+resetSliders();
+
+};
+
+const reset=document.createElement('button');
+
+reset.textContent='Reset Anatomical Pose';
+
+reset.onclick=()=>{
+
+$('resetPose').click();
+
+};
+
+anatomyPanel.appendChild(reset);
+
+
+
+
+const combatPanel=document.createElement("details");
+
+combatPanel.open=true;
+
+combatPanel.innerHTML=
+'<summary>V4.10 Full Body Animation</summary>';
+
+anatomyPanel.parentElement.appendChild(combatPanel);
+
+function ui410(tag,text,parent=combatPanel){
+
+const el=document.createElement(tag);
+
+if(text)el.textContent=text;
+
+el.style.margin="5px 0";
+
+parent.appendChild(el);
+
+return el;
+
+}
+
+const status410=ui410(
+"p","Build the character rig first."
+);
+
+const boneSelect410=ui410("select");
+
+boneSelect410.style.width="100%";
+
+function range410(label,min,max,value){
+
+const row=ui410("div");
+
+const caption=ui410("label",label,row);
+
+const slider=ui410("input","",row);
+
+slider.type="range";
+slider.min=min;
+slider.max=max;
+slider.value=value;
+slider.style.width="100%";
+
+const output=ui410("span",String(value),row);
+
+slider.addEventListener("input",()=>{
+output.textContent=slider.value;
+});
+
+return {slider,output};
+
+}
+
+const axes410={};
+
+for(const axis of ["x","y","z"]){
+
+axes410[axis]=range410(
+"Joint "+axis.toUpperCase(),
+-180,180,0
+);
+
+axes410[axis].slider.oninput=()=>{
+
+if(!posed)return;
+
+stop410();
+
+const bone=getBone(boneSelect410.value);
+
+if(!bone)return;
+
+bone.rotation[axis]=
+THREE.MathUtils.degToRad(
+Number(axes410[axis].slider.value)
+);
+
+posed.updateMatrixWorld(true);
+
+syncJoint();
+
+};
+
+}
+
+function sync410(){
+
+const bone=getBone(boneSelect410.value);
+
+if(!bone)return;
+
+for(const axis of ["x","y","z"]){
+
+const value=Math.round(
+THREE.MathUtils.radToDeg(
+bone.rotation[axis]
+)
+);
+
+axes410[axis].slider.value=value;
+
+axes410[axis].output.textContent=value+"°";
+
+}
+
+}
+
+boneSelect410.onchange=sync410;
+
+function populate410(){
+
+boneSelect410.innerHTML="";
+
+for(const bone of bones){
+
+const option=document.createElement("option");
+
+option.value=bone.name;
+
+option.textContent=bone.name;
+
+boneSelect410.appendChild(option);
+
+}
+
+sync410();
+
+status410.textContent=
+bones.length+" individual bones available";
+
+}
+
+const build410=$("buildRig").onclick;
+
+$("buildRig").onclick=async()=>{
+
+stop410();
+
+await build410();
+
+if(posed)populate410();
+
+};
+
+const reset410=ui410(
+"button","Reset Selected Joint"
+);
+
+reset410.onclick=()=>{
+
+stop410();
+
+const bone=getBone(boneSelect410.value);
+
+if(!bone)return;
+
+bone.quaternion.identity();
+
+posed.updateMatrixWorld(true);
+
+sync410();
+
+syncJoint();
+
+};
+
+ui410("h3","Automatic Straight Punch");
+
+const side410=ui410("select");
+
+for(const side of ["R","L"]){
+
+const option=document.createElement("option");
+
+option.value=side;
+
+option.textContent=
+side==="R"?"Right Punch":"Left Punch";
+
+side410.appendChild(option);
+
+}
+
+const speed410=range410(
+"Speed %",25,200,100
+);
+
+const power410=range410(
+"Power %",0,100,80
+);
+
+const reach410=range410(
+"Reach %",20,100,85
+);
+
+const angle410=range410(
+"Direction", -90,90,0
+);
+
+const timeline410=range410(
+"Animation Timeline",0,100,0
+);
+
+let animation410=0;
+
+let snapshot410=null;
+
+let character410=null;
+
+function stop410(){
+
+if(animation410)
+cancelAnimationFrame(animation410);
+
+animation410=0;
+
+}
+
+function capture410(){
+
+if(!posed)return false;
+
+if(restRig!==posed)
+captureAnatomy();
+
+snapshot410=new Map();
+
+for(const bone of bones){
+
+snapshot410.set(
+bone.name,
+bone.quaternion.clone()
+);
+
+}
+
+character410=posed;
+
+return true;
+
+}
+
+function restore410(){
+
+if(!snapshot410||character410!==posed)
+return false;
+
+for(const bone of bones){
+
+const q=snapshot410.get(bone.name);
+
+if(q)bone.quaternion.copy(q);
+
+}
+
+posed.updateMatrixWorld(true);
+
+return true;
+
+}
+
+function aim410(bone,next,target,strength){
+
+if(!bone||!next||!bone.parent)return;
+
+const original=direction(
+bone.name,next.name
+);
+
+if(!original)return;
+
+const parentQ=bone.parent
+.getWorldQuaternion(
+new THREE.Quaternion()
+).invert();
+
+const localTarget=target.clone()
+.applyQuaternion(parentQ)
+.normalize();
+
+const rotation=new THREE.Quaternion()
+.setFromUnitVectors(
+original.normalize(),
+localTarget
+);
+
+const baseQ=snapshot410.get(bone.name);
+
+if(baseQ){
+
+bone.quaternion.copy(baseQ)
+.slerp(rotation,strength);
+
+}
+
+posed.updateMatrixWorld(true);
+
+}
+
+function punch410(progress){
+
+if(!posed||!restore410())return;
+
+const side=side410.value;
+
+const upper=getBone("upperarm01."+side);
+
+const lower=getBone("lowerarm01."+side);
+
+const wrist=getBone("wrist."+side);
+
+if(!upper||!lower||!wrist){
+
+stop410();
+
+status410.textContent=
+"Required arm bones not found";
+
+return;
+
+}
+
+const power=Number(
+power410.slider.value
+)/100;
+
+const reach=Number(
+reach410.slider.value
+)/100;
+
+const forwardVector=forward().clone();
+
+forwardVector.applyAxisAngle(
+new THREE.Vector3(0,1,0),
+THREE.MathUtils.degToRad(
+Number(angle410.slider.value)
+)
+);
+
+const envelope=Math.sin(
+Math.PI*progress
+);
+
+const strength=Math.min(
+1,envelope*1.3
+);
+
+const extension=Math.min(
+1,strength*reach
+);
+
+const upperTarget=forwardVector.clone();
+
+upperTarget.y=-0.15;
+
+upperTarget.normalize();
+
+aim410(
+upper,lower,upperTarget,
+extension
+);
+
+const lowerTarget=forwardVector.clone();
+
+lowerTarget.y=
+(1-extension)*0.75;
+
+lowerTarget.normalize();
+
+aim410(
+lower,wrist,lowerTarget,
+strength*(0.5+power*0.5)
+);
+
+sync410();
+
+syncJoint();
+
+}
+
+const play410=ui410(
+"button","Play Straight Punch"
+);
+
+play410.onclick=()=>{
+
+stop410();
+
+if(!capture410()){
+
+status410.textContent=
+"Build rig before animation";
+
+return;
+
+}
+
+const duration=1200/
+(Number(speed410.slider.value)/100);
+
+const startTime=performance.now();
+
+function frame(now){
+
+if(!posed||character410!==posed){
+
+stop410();
+
+return;
+
+}
+
+const t=Math.min(
+1,(now-startTime)/duration
+);
+
+punch410(t);
+
+timeline410.slider.value=
+Math.round(t*100);
+
+timeline410.output.textContent=
+Math.round(t*100)+"%";
+
+if(t<1){
+
+animation410=
+requestAnimationFrame(frame);
+
+}else{
+
+animation410=0;
+
+status410.textContent=
+"Punch complete";
+
+}
+
+}
+
+status410.textContent="Playing punch";
+
+animation410=
+requestAnimationFrame(frame);
+
+};
+
+timeline410.slider.oninput=()=>{
+
+stop410();
+
+if(!posed)return;
+
+if(!snapshot410||character410!==posed){
+
+if(!capture410())return;
+
+}
+
+punch410(
+Number(timeline410.slider.value)/100
+);
+
+};
+
+const pause410=ui410(
+"button","Pause / Edit Current Pose"
+);
+
+pause410.onclick=()=>{
+
+stop410();
+
+sync410();
+
+status410.textContent=
+"Paused - manual editing available";
+
+};
+
+const basePose410=ui410(
+"button","Capture Current Base Pose"
+);
+
+basePose410.onclick=()=>{
+
+stop410();
+
+if(capture410()){
+
+status410.textContent=
+"Current pose captured";
+
+}
+
+};
+
+const restoreButton410=ui410(
+"button","Restore Base Pose"
+);
+
+restoreButton410.onclick=()=>{
+
+stop410();
+
+restore410();
+
+sync410();
+
+syncJoint();
+
+};
+
+const previousReset410=$("resetPose").onclick;
+
+$("resetPose").onclick=()=>{
+
+stop410();
+
+snapshot410=null;
+
+previousReset410();
+
+sync410();
+
+};
+
+document.title="Kumar Studio V5.0";
+
+
+renderer.setAnimationLoop(()=>{
+if(posed&&rigGeneration!==generation)clearRig();
+controls.update();
+renderer.render(scene,camera);
+});
+
+$('load').click();
+</script>
+</body>
+</html>
