@@ -1008,24 +1008,29 @@ const b=selectedBone();
 if(!b)return;
 for(const axis of ['x','y','z']){
 const val=Math.round(
-THREE.MathUtils.radToDeg(b.rotation[axis]));
+THREE.MathUtils.radToDeg(spineChain().includes(b)?spineChain().reduce((sum,j)=>sum+j.rotation[axis],0):b.rotation[axis]));
 $('r'+axis).value=val;
 $('r'+axis+'v').textContent=val+'°';
 }
 }
 
+function spineChain(){
+return bones.filter(b=>/^spine0[1-5]$/.test(b.name)).sort((a,b)=>a.name.localeCompare(b.name));
+}
 function rotateJoint(){
 const b=selectedBone();
 if(!b)return;
+const chain=spineChain();
+const distributed=chain.includes(b)&&chain.length>1;
 for(const axis of ['x','y','z']){
 let val=Number($('r'+axis).value);
-// Prevent extreme single-vertebra rotations that collapse the torso mesh.
-if(/^spine0[1-5]$/.test(b.name)){
+if(distributed){
  const limit=axis==='y'?18:22;
- val=THREE.MathUtils.clamp(val,-limit,limit);
- $('r'+axis).value=val;
-}
-b.rotation[axis]=THREE.MathUtils.degToRad(val);
+ val=THREE.MathUtils.clamp(val,-limit*chain.length,limit*chain.length);
+ const angle=THREE.MathUtils.degToRad(val/chain.length);
+ for(const joint of chain)joint.rotation[axis]=angle;
+}else b.rotation[axis]=THREE.MathUtils.degToRad(val);
+$('r'+axis).value=val;
 $('r'+axis+'v').textContent=val+'°';
 }
 }
@@ -1071,7 +1076,7 @@ if(rigHelper)rigHelper.visible=!rigHelper.visible;
 
 $('resetJoint').onclick=()=>{
 const b=selectedBone();
-if(b){b.rotation.set(0,0,0);syncJoint()}
+if(b){if(spineChain().includes(b))spineChain().forEach(j=>j.rotation.set(0,0,0));else b.rotation.set(0,0,0);syncJoint()}
 };
 
 $('resetPose').onclick=()=>{
