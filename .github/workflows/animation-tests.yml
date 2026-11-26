@@ -19,20 +19,21 @@ jobs:
           python-version: '3.12'
       - run: python -m compileall -q animation_engine
       - run: python animation_engine/reactions.py
-      - run: sudo apt-get update && sudo apt-get install -y blender
-      - run: blender --background --factory-startup --python-expr "import bpy; print(bpy.app.version_string)"
+      - run: sudo apt-get update && sudo apt-get install -y blender xvfb libgl1-mesa-dri xauth
+      - run: xvfb-run -a blender --background --factory-startup --python-expr "import bpy; print(bpy.app.version_string)"
       - name: Render smoke test
         run: |
           mkdir -p test-output
-          blender --background --factory-startup --python-expr "import bpy; s=bpy.context.scene; s.render.engine='BLENDER_WORKBENCH'; s.render.resolution_x=640; s.render.resolution_y=480; s.render.resolution_percentage=100; s.render.filepath='test-output/smoke.png'; bpy.ops.render.render(write_still=True)"
+          xvfb-run -a blender --background --factory-startup --python-expr "import bpy; s=bpy.context.scene; s.render.engine='BLENDER_WORKBENCH'; s.render.resolution_x=640; s.render.resolution_y=480; s.render.resolution_percentage=100; s.render.filepath='test-output/smoke.png'; bpy.ops.render.render(write_still=True)"
           test -s test-output/smoke.png
       - name: Generate independent Dhruv prototype
         run: |
-          blender --background --factory-startup --python-exit-code 1 --python animation_engine/character_prototype.py
+          xvfb-run -a blender --background --factory-startup --python-exit-code 1 --python animation_engine/character_prototype.py
           test -s test-output/dhruv-prototype.png
           test -s test-output/dhruv-prototype.blend
           test -s test-output/dhruv-prototype.glb
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: blender-render-test
           path: test-output/
