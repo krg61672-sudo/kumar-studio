@@ -1,0 +1,316 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+content="width=device-width,initial-scale=1">
+<title>Kumar Studio V4.9.2</title>
+</head>
+
+<body style="background:#101827;color:white;font:16px Arial">
+
+<p id="loading">
+Loading V4.9.2 Anatomical Thumb Studio...
+</p>
+
+<script>
+
+async function start(){
+
+const response=await fetch(
+'./studio-v4.9.1.html',
+{cache:'no-cache'}
+);
+
+if(!response.ok)
+throw Error('V4.9.1 unavailable');
+
+let source=await response.text();
+
+const begin=source.indexOf(
+'const thumbCurl=state.curl[0]/100;'
+);
+
+const end=source.indexOf(
+'posed.updateMatrixWorld(true);',
+begin
+);
+
+if(begin<0||end<0)
+throw Error('Thumb source not found');
+
+const thumbCode=`
+
+const thumbCurl=THREE.MathUtils.clamp(
+state.curl[0]/100,0,1
+);
+
+const opposition=THREE.MathUtils.clamp(
+state.opposition/100,0,1
+);
+
+const t1=getBone(
+fingerName(side,1,1)
+);
+
+const t2=getBone(
+fingerName(side,1,2)
+);
+
+const t3=getBone(
+fingerName(side,1,3)
+);
+
+if(t1&&t2&&t3){
+
+t1.quaternion.identity();
+t2.quaternion.identity();
+t3.quaternion.identity();
+
+posed.updateMatrixWorld(true);
+
+const wristBone=getBone('wrist.'+side);
+
+if(wristBone){
+
+const wristRotation=
+wristBone.getWorldQuaternion(
+new THREE.Quaternion()
+);
+
+const worldAcross=frame.across.clone()
+.applyQuaternion(wristRotation)
+.normalize();
+
+const worldAlong=frame.along.clone()
+.applyQuaternion(wristRotation)
+.normalize();
+
+const worldNormal=frame.normal.clone()
+.applyQuaternion(wristRotation)
+.normalize();
+
+const indexBone=getBone(
+fingerName(side,2,2)
+);
+
+const middleBone=getBone(
+fingerName(side,3,2)
+);
+
+const p1=t1.getWorldPosition(
+new THREE.Vector3()
+);
+
+const p2=t2.getWorldPosition(
+new THREE.Vector3()
+);
+
+const p3=t3.getWorldPosition(
+new THREE.Vector3()
+);
+
+const len1=p1.distanceTo(p2);
+const len2=p2.distanceTo(p3);
+
+function aimThumbBone(
+bone,restDirection,target,strength
+){
+
+if(!bone.parent)return;
+
+if(target.lengthSq()<0.000001)
+return;
+
+const parentQ=
+bone.parent.getWorldQuaternion(
+new THREE.Quaternion()
+);
+
+const localTarget=target.clone()
+.applyQuaternion(parentQ.invert())
+.normalize();
+
+const rotation=new THREE.Quaternion()
+.setFromUnitVectors(
+restDirection.clone().normalize(),
+localTarget
+);
+
+bone.quaternion.identity()
+.slerp(
+rotation,
+THREE.MathUtils.clamp(strength,0,1)
+);
+
+posed.updateMatrixWorld(true);
+
+}
+
+const d1=t2.position.clone()
+.normalize();
+
+const d2=t3.position.clone()
+.normalize();
+
+const acrossPalm=worldAcross.clone()
+.negate();
+
+const baseTarget=acrossPalm.clone()
+.multiplyScalar(0.72)
+.addScaledVector(worldAlong,0.55)
+.addScaledVector(worldNormal,0.48)
+.normalize();
+
+aimThumbBone(
+t1,d1,baseTarget,opposition
+);
+
+if(indexBone&&middleBone){
+
+const indexPoint=
+indexBone.getWorldPosition(
+new THREE.Vector3()
+);
+
+const middlePoint=
+middleBone.getWorldPosition(
+new THREE.Vector3()
+);
+
+const target=indexPoint.clone()
+.lerp(middlePoint,0.38);
+
+target.addScaledVector(
+worldNormal,
+Math.max(len2*0.45,0.002)
+);
+
+const currentJoint=
+t2.getWorldPosition(
+new THREE.Vector3()
+);
+
+const desired=target.clone()
+.sub(currentJoint)
+.normalize();
+
+const gripDirection=
+acrossPalm.clone()
+.multiplyScalar(0.85)
+.addScaledVector(worldAlong,0.20)
+.addScaledVector(worldNormal,0.15)
+.normalize();
+
+desired.lerp(
+gripDirection,0.25
+).normalize();
+
+aimThumbBone(
+t2,d2,desired,
+Math.max(
+thumbCurl,
+opposition*0.85
+)
+);
+
+}
+
+const parentQ=
+t3.parent.getWorldQuaternion(
+new THREE.Quaternion()
+);
+
+const tipDirection=acrossPalm.clone()
+.multiplyScalar(0.8)
+.addScaledVector(worldNormal,-0.45)
+.addScaledVector(worldAlong,0.15)
+.normalize();
+
+const localTip=tipDirection.clone()
+.applyQuaternion(parentQ.invert())
+.normalize();
+
+let restTip=d2.clone();
+
+const tipChild=t3.children.find(
+child=>child.isBone
+);
+
+if(tipChild&&
+tipChild.position.lengthSq()>0.000001){
+
+restTip=tipChild.position.clone()
+.normalize();
+
+}
+
+const tipRotation=
+new THREE.Quaternion()
+.setFromUnitVectors(
+restTip,localTip
+);
+
+t3.quaternion.identity()
+.slerp(
+tipRotation,
+thumbCurl*0.85
+);
+
+}
+
+}
+
+`;
+
+source=
+source.slice(0,begin)+
+thumbCode+
+source.slice(end);
+
+source=source.replace(
+"'Closed Fist':[65,100,100,100,100,0,85]",
+"'Closed Fist':[85,100,100,100,100,0,100]"
+);
+
+source=source.replace(
+'s.curl=[v*0.65,v,v,v,v];',
+'s.curl=[v*0.85,v,v,v,v];'
+);
+
+source=source.replace(
+'s.opposition=v*0.85;',
+'s.opposition=v;'
+);
+
+source=source.replaceAll(
+'V4.9.1',
+'V4.9.2'
+);
+
+source=source.replaceAll(
+'Advanced Hand Studio Ready',
+'Anatomical Thumb Studio Ready'
+);
+
+document.open();
+document.write(source);
+document.close();
+
+}
+
+start().catch(e=>{
+
+const status=
+document.getElementById('loading');
+
+if(status)
+status.textContent=
+'Error: '+e.message;
+
+});
+
+</script>
+</body>
+</html>
