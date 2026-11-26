@@ -1,0 +1,324 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+content="width=device-width,initial-scale=1">
+<title>Kumar Studio V4.10.4</title>
+</head>
+
+<body style="background:#101827;color:white;font:16px Arial">
+
+<p id="loading">
+Loading Mirrored Hand Correction...
+</p>
+
+<script>
+async function start(){
+
+const response=await fetch(
+'./studio-v4.10.3.html',
+{cache:'no-cache'}
+);
+
+if(!response.ok)
+throw Error('V4.10.3 unavailable');
+
+let source=await response.text();
+
+const patch=`
+
+const injuryFist4104=anatomicalFist4103;
+
+function mirroredFist4104(side,amount){
+
+if(!posed||restRig!==posed)return;
+
+const savedState=handState.R;
+const savedAdjust=jointAdjust.R;
+
+const savedBones=new Map();
+const result=new Map();
+
+for(let f=1;f<=5;f++){
+
+for(let j=1;j<=3;j++){
+
+const bone=getBone(
+fingerName("R",f,j)
+);
+
+if(bone){
+
+savedBones.set(
+bone.name,
+bone.quaternion.clone()
+);
+
+}
+
+}
+
+}
+
+const value=THREE.MathUtils.clamp(
+amount,0,100
+);
+
+try{
+
+handState.R={
+curl:[
+value*0.70,
+value,
+value,
+value,
+value
+],
+spread:0,
+opposition:value*0.85,
+mode:"fist"
+};
+
+jointAdjust.R=Array.from(
+{length:5},()=>[0,0,0]
+);
+
+previousHand4103("R");
+
+for(let f=1;f<=5;f++){
+
+for(let j=1;j<=3;j++){
+
+const bone=getBone(
+fingerName("R",f,j)
+);
+
+if(bone){
+
+result.set(
+f+"-"+j,
+bone.quaternion.clone()
+);
+
+}
+
+}
+
+}
+
+}finally{
+
+handState.R=savedState;
+jointAdjust.R=savedAdjust;
+
+for(const [name,q] of savedBones){
+
+const bone=getBone(name);
+
+if(bone)
+bone.quaternion.copy(q);
+
+}
+
+}
+
+for(let f=1;f<=5;f++){
+
+for(let j=1;j<=3;j++){
+
+const bone=getBone(
+fingerName(side,f,j)
+);
+
+const q=result.get(f+"-"+j);
+
+if(!bone||!q)continue;
+
+if(side==="R"){
+
+bone.quaternion.copy(q);
+
+}else{
+
+bone.quaternion.set(
+q.x,
+-q.y,
+-q.z,
+q.w
+).normalize();
+
+}
+
+}
+
+}
+
+posed.updateMatrixWorld(true);
+
+syncJoint();
+
+}
+
+anatomicalFist4103=function(side,amount){
+
+if(damage4103[side]){
+
+injuryFist4104(side,amount);
+
+return;
+
+}
+
+mirroredFist4104(side,amount);
+
+};
+
+const oldHand4104=applyHand;
+
+applyHand=function(side){
+
+if(!posed||restRig!==posed)return;
+
+if(handState[side].mode==="fist"){
+
+anatomicalFist4103(
+side,
+Math.max(...handState[side].curl)
+);
+
+return;
+
+}
+
+oldHand4104(side);
+
+};
+
+const mirrorPanel4104=ui410(
+"details"
+);
+
+mirrorPanel4104.open=true;
+
+mirrorPanel4104.innerHTML=
+"<summary>V4.10.4 Mirrored Fist Test</summary>";
+
+for(const side of ["R","L"]){
+
+const label=side==="R"?
+"Right":"Left";
+
+const button=ui410(
+"button",
+"Test "+label+" Mirrored Fist",
+mirrorPanel4104
+);
+
+button.onclick=()=>{
+
+stop410();
+
+if(!posed){
+
+status410.textContent=
+"Build character skeleton first";
+
+return;
+
+}
+
+if(restRig!==posed)
+captureAnatomy();
+
+mirroredFist4104(side,100);
+
+status410.textContent=
+label+" mirrored fist applied";
+
+};
+
+}
+
+const both4104=ui410(
+"button",
+"Test Both Fists",
+mirrorPanel4104
+);
+
+both4104.onclick=()=>{
+
+stop410();
+
+if(!posed)return;
+
+if(restRig!==posed)
+captureAnatomy();
+
+mirroredFist4104("R",100);
+mirroredFist4104("L",100);
+
+status410.textContent=
+"Both mirrored fists applied";
+
+};
+
+const open4104=ui410(
+"button",
+"Open Both Hands",
+mirrorPanel4104
+);
+
+open4104.onclick=()=>{
+
+stop410();
+
+if(!posed)return;
+
+setGesture("R","Open Hand");
+setGesture("L","Open Hand");
+
+};
+
+document.title=
+"Kumar Studio V4.10.4";
+
+`;
+
+const marker=
+'document.title='+String.fromCharCode(10)+
+'"Kumar Studio V4.10.3";';
+
+if(!source.includes(marker))
+throw Error('Hand correction marker missing');
+
+source=source.replace(
+marker,
+()=>patch
+);
+
+source=source.replaceAll(
+'KUMAR STUDIO V4.10.3',
+'KUMAR STUDIO V4.10.4'
+);
+
+document.open();
+document.write(source);
+document.close();
+
+}
+
+start().catch(e=>{
+
+const status=
+document.getElementById('loading');
+
+if(status)
+status.textContent='Error: '+e.message;
+
+});
+
+</script>
+</body>
+</html>
