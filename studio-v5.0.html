@@ -3004,7 +3004,7 @@ function showHandTest(){
  camera.position.copy(testSnapshot.camera);controls.target.copy(testSnapshot.target);controls.update();
  if(t.bone||t.move||t.overlay||t.mesh||t.punch){
   let note="Inspect movement and deformation";
-  if(t.bone){const b=getBone(t.bone);if(!b){recordHandTest("SKIP (bone unavailable)");return;} $("joint").value=b.name; if(selectedBone()!==b){const option=Array.from($("joint").options).find(o=>o.textContent.includes(b.name));if(option)$("joint").value=option.value;} if(selectedBone()===b){for(const axis of ["x","y","z"])$("r"+axis).value=axis===t.axis?t.angle:0;rotateJoint();}else{recordHandTest("SKIP (joint selector unavailable)");return;}}
+  if(t.bone){const b=getBone(t.bone);if(!b){recordHandTest("SKIP (bone unavailable)");return;} $("joint").value=String(bones.indexOf(b)); if(selectedBone()===b){for(const axis of ["x","y","z"])$("r"+axis).value=axis===t.axis?t.angle:0;rotateJoint();}else{recordHandTest("SKIP (joint selector unavailable)");return;}}
   if(t.move){$("moveX").value=0.2;moveCharacter();}
   if(t.overlay&&rigHelper)rigHelper.visible=true;
   if(t.punch){capture410();punch410(.5);note="Inspect punch midpoint";}
