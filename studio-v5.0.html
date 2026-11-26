@@ -3255,16 +3255,42 @@ function captureStop(){if(captureRAF)cancelAnimationFrame(captureRAF);captureRAF
 function captureRestore(){captureStop();if(captureBase&&captureBase.rig===posed){bones.forEach((b,i)=>{b.quaternion.copy(captureBase.q[i]);b.position.copy(captureBase.p[i]);});posed.updateMatrixWorld(true);syncJoint();}captureBase=null;captureTime=0;$("bvhTime").value=0;}
 function captureInit(){if(!posed||restRig!==posed||!captureData)return false;motionRestore();stop410();if(testSnapshot)finishHandTests();if(!captureBase||captureBase.rig!==posed){captureBase={rig:posed,q:bones.map(b=>b.quaternion.clone()),p:bones.map(b=>b.position.clone())};}return true;}
 const normMotionName=n=>n.toLowerCase().replace(/[^a-z0-9]/g,"");
+function captureWorld(b){return b.getWorldPosition(new THREE.Vector3());}
+function captureTranslate(b,v){if(b.parent){b.parent.updateWorldMatrix(true,false);const origin=b.parent.worldToLocal(new THREE.Vector3());v=b.parent.worldToLocal(v.clone()).sub(origin);}b.position.add(v);posed.updateMatrixWorld(true);}
+function captureBasis(x,y){x=x.clone().normalize();y=y.clone().addScaledVector(x,-y.dot(x)).normalize();const z=new THREE.Vector3().crossVectors(x,y).normalize();return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x,y,z));}
+function captureOrient(b,q){if(!b||!b.parent)return;const p=b.parent.getWorldQuaternion(new THREE.Quaternion());b.quaternion.copy(p.invert().multiply(q));posed.updateMatrixWorld(true);}
 function capturePose(time){
  if(!captureBase||captureBase.rig!==posed)return;
  const {skeleton,clip,mixer,lookup,scale}=captureData;
  mixer.setTime(Math.min(time,Math.max(0,clip.duration-.00001)));skeleton.bones[0].updateMatrixWorld(true);
  bones.forEach((b,i)=>{b.quaternion.copy(captureBase.q[i]);b.position.copy(captureBase.p[i]);});posed.updateMatrixWorld(true);
- const pairs=[["Hips","Spine","pelvis","spine01"],["Spine","Spine1","spine01","spine02"],["Spine1","Spine2","spine02","spine03"],["Neck","Head","neck01","head"]];
- for(const [s,word] of [["L","Left"],["R","Right"]])pairs.push([word+"UpLeg",word+"Leg","upperleg01."+s,"lowerleg01."+s],[word+"Leg",word+"Foot","lowerleg01."+s,"foot."+s],[word+"Foot",word+"ToeBase","foot."+s,"toe2-1."+s],[word+"Arm",word+"ForeArm","upperarm01."+s,"lowerarm01."+s],[word+"ForeArm",word+"Hand","lowerarm01."+s,"wrist."+s]);
- const source=n=>lookup.get(normMotionName(n));const left=source("LeftUpLeg"),right=source("RightUpLeg");const pelvis=getBone("pelvis");if(left&&right&&pelvis&&pelvis.parent){const across=left.getWorldPosition(new THREE.Vector3()).sub(right.getWorldPosition(new THREE.Vector3()));const targetAcross=getBone("upperleg01.L").getWorldPosition(new THREE.Vector3()).sub(getBone("upperleg01.R").getWorldPosition(new THREE.Vector3()));across.y=0;targetAcross.y=0;if(across.lengthSq()>1e-8&&targetAcross.lengthSq()>1e-8){const inv=pelvis.parent.getWorldQuaternion(new THREE.Quaternion()).invert();pelvis.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(targetAcross.normalize().applyQuaternion(inv),across.normalize().applyQuaternion(inv)));posed.updateMatrixWorld(true);}}
- for(const [a,b,x,y] of pairs){const A=source(a),B=source(b);if(A&&B){const d=B.getWorldPosition(new THREE.Vector3()).sub(A.getWorldPosition(new THREE.Vector3()));if(d.lengthSq()>1e-9)aimCurrent(x,y,d);}}
- const offset=skeleton.bones[0].position.clone().sub(captureData.start).multiplyScalar(scale);const root=bones[0];const sourceFloor=Math.min(...["leftfoot","rightfoot"].map(n=>lookup.get(n).getWorldPosition(new THREE.Vector3()).y));const targetFloor=Math.min(...["foot.L","foot.R","toe2-1.L","toe2-1.R"].map(n=>getBone(n)).filter(Boolean).map(b=>b.getWorldPosition(new THREE.Vector3()).y));const restFloor=Math.min(...["foot.L","foot.R","toe2-1.L","toe2-1.R"].filter(n=>rest.has(n)).map(n=>rest.get(n).y));offset.y=restFloor-targetFloor+Math.max(0,(sourceFloor-captureData.sourceFloor)*scale);if(root.parent){root.parent.updateWorldMatrix(true,false);const o=root.parent.worldToLocal(new THREE.Vector3());offset.copy(root.parent.worldToLocal(offset).sub(o));}root.position.add(offset);posed.updateMatrixWorld(true);syncJoint();
+ const source=n=>lookup.get(normMotionName(n)), target=getBone;
+ const vec=(a,b)=>captureWorld(b).sub(captureWorld(a));
+ const pelvis=target("pelvis"),L=target("upperleg01.L"),R=target("upperleg01.R"),sp=target("spine01");
+ const sl=source("LeftUpLeg"),sr=source("RightUpLeg"),sh=source("Hips"),ss=source("Spine");
+ if(pelvis&&L&&R&&sp&&sl&&sr&&sh&&ss){
+ const tq=captureBasis(vec(R,L),vec(pelvis,sp)),sq=captureBasis(vec(sr,sl),vec(sh,ss));
+ captureOrient(pelvis,sq.multiply(tq.invert()).multiply(pelvis.getWorldQuaternion(new THREE.Quaternion())));
+ }
+ const pairs=[["Spine","Spine1","spine01","spine02"],["Spine1","Spine2","spine02","spine03"],["Neck","Head","neck01","head"]];
+ for(const [s,w] of [["L","Left"],["R","Right"]])pairs.push([w+"UpLeg",w+"Leg","upperleg01."+s,"lowerleg01."+s],[w+"Leg",w+"Foot","lowerleg01."+s,"foot."+s],[w+"Arm",w+"ForeArm","upperarm01."+s,"lowerarm01."+s],[w+"ForeArm",w+"Hand","lowerarm01."+s,"wrist."+s]);
+ for(const [a,b,x,y] of pairs){const A=source(a),B=source(b);if(A&&B&&target(x)&&target(y)){const d=vec(A,B);if(d.lengthSq()>1e-9)aimCurrent(x,y,d);}}
+ // Preserve source knee/elbow bend planes by aligning the parent segment's axial twist.
+ for(const [s,w] of [["L","Left"],["R","Right"]])for(const [names,tn] of [[[w+"UpLeg",w+"Leg",w+"Foot"],["upperleg01."+s,"lowerleg01."+s,"foot."+s]],[[w+"Arm",w+"ForeArm",w+"Hand"],["upperarm01."+s,"lowerarm01."+s,"wrist."+s]]]){
+ const [a,b,d]=names.map(source),[x,y,z]=tn.map(target);if(!a||!b||!d||!x||!y||!z)continue;
+ const u=vec(x,y).normalize(),sn=vec(a,b).cross(vec(b,d)),tnorm=vec(x,y).cross(vec(y,z));
+ if(sn.lengthSq()<1e-8||tnorm.lengthSq()<1e-8)continue;
+ sn.addScaledVector(u,-sn.dot(u)).normalize();tnorm.addScaledVector(u,-tnorm.dot(u)).normalize();
+ const angle=Math.atan2(u.dot(tnorm.clone().cross(sn)),tnorm.dot(sn));
+ captureOrient(x,new THREE.Quaternion().setFromAxisAngle(u,angle).multiply(x.getWorldQuaternion(new THREE.Quaternion())));
+ aimCurrent(tn[1],tn[2],vec(b,d));
+ }
+ const root=bones[0],offset=skeleton.bones[0].position.clone().sub(captureData.start).multiplyScalar(scale);
+ const feet=["foot.L","foot.R","toe2-1.L","toe2-1.R"].map(target).filter(Boolean);
+ const floor=Math.min(...feet.map(b=>captureWorld(b).y));
+ const restFloor=Math.min(...["foot.L","foot.R","toe2-1.L","toe2-1.R"].filter(n=>rest.has(n)).map(n=>rest.get(n).y));
+ if(Number.isFinite(floor)&&Number.isFinite(restFloor))offset.y=restFloor-floor;
+ captureTranslate(root,offset);syncJoint();
 }
 async function loadCapture(raw){captureRestore();const {BVHLoader}=await import("three/addons/loaders/BVHLoader.js");const {skeleton,clip}=new BVHLoader().parse(raw);const lookup=new Map(skeleton.bones.map(b=>[normMotionName(b.name),b]));const aliases={hips:"hip",spine:"abdomen",spine1:"chest",spine2:"neck",leftupleg:"lthigh",leftleg:"lshin",leftfoot:"lfoot",lefttoebase:"ltoe",rightupleg:"rthigh",rightleg:"rshin",rightfoot:"rfoot",righttoebase:"rtoe",leftarm:"lshldr",leftforearm:"lforearm",lefthand:"lhand",rightarm:"rshldr",rightforearm:"rforearm",righthand:"rhand"};for(const [key,alias] of Object.entries(aliases))if(!lookup.has(key)&&lookup.has(alias))lookup.set(key,lookup.get(alias));const required=["leftupleg","leftleg","leftfoot","rightupleg","rightleg","rightfoot","leftarm","leftforearm","lefthand","rightarm","rightforearm","righthand"];if(required.some(n=>!lookup.has(n)))throw Error("Unsupported BVH naming; expected standard Left/Right limb names.");const sourceGroup=new THREE.Group();sourceGroup.add(skeleton.bones[0]);const mixer=new THREE.AnimationMixer(sourceGroup);mixer.clipAction(clip).play();mixer.setTime(0);skeleton.bones[0].updateMatrixWorld(true);const start=skeleton.bones[0].position.clone();const a=lookup.get("leftupleg"),b=lookup.get("leftfoot");const knee=lookup.get("leftleg");const length=a.getWorldPosition(new THREE.Vector3()).distanceTo(knee.getWorldPosition(new THREE.Vector3()))+knee.getWorldPosition(new THREE.Vector3()).distanceTo(b.getWorldPosition(new THREE.Vector3()));const hip=rest.get("upperleg01.L"),foot=rest.get("foot.L");const scale=(hip&&foot&&rest.has("lowerleg01.L")?hip.distanceTo(rest.get("lowerleg01.L"))+rest.get("lowerleg01.L").distanceTo(foot):.8)/Math.max(.001,length);captureData={skeleton,clip,mixer,lookup,start,scale,sourceFloor:Math.min(...["leftfoot","rightfoot"].map(n=>lookup.get(n).getWorldPosition(new THREE.Vector3()).y))};$("bvhStatus").textContent="Recording loaded: "+clip.duration.toFixed(2)+" seconds. Retarget preview (not visually validated).";}
 $("bvhFile").onchange=async()=>{try{const file=$("bvhFile").files[0];if(file)await loadCapture(await file.text());}catch(e){$("bvhStatus").textContent=e.message;}};
