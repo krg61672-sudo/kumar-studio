@@ -3129,6 +3129,32 @@ play410.onclick=()=>{motionRestore();return priorMotionPunch();};
 const priorMotionReset=$("resetPose").onclick;
 $("resetPose").onclick=()=>{motionRestore();return priorMotionReset();};
 
+
+const stancePanel=document.createElement("details");
+stancePanel.open=true;
+stancePanel.innerHTML='<summary>Standing Pose & Body Stance</summary><button id="stanceNatural">Natural Standing</button><button id="stanceA">Restore A-Pose</button><label>Arm lowering <input id="stanceArms" type="range" min="0" max="100" value="0"></label><label>Leg closing <input id="stanceLegs" type="range" min="0" max="100" value="0"></label><p id="stanceStatus">Build skeleton first.</p>';
+document.querySelector("aside").prepend(stancePanel);
+let stanceRig=null,stanceBase=null;
+function applyStance(){
+ if(!posed||restRig!==posed){$("stanceStatus").textContent="Build skeleton first.";return;}
+ motionRestore();stop410();if(testSnapshot)finishHandTests();
+ if(stanceRig!==posed){stanceRig=posed;stanceBase=new Map();for(const side of ["L","R"])for(const part of ["upperarm01","upperleg01"]){const b=getBone(part+"."+side);if(b)stanceBase.set(b.name,b.quaternion.clone());}}
+ const down=new THREE.Vector3(0,-1,0);
+ for(const side of ["L","R"])for(const [part,next,id] of [["upperarm01","lowerarm01","stanceArms"],["upperleg01","lowerleg01","stanceLegs"]]){
+ const b=getBone(part+"."+side),n=getBone(next+"."+side);if(!b||!n||!b.parent)continue;
+ b.quaternion.copy(stanceBase.get(b.name));posed.updateMatrixWorld(true);
+ const d=n.getWorldPosition(new THREE.Vector3()).sub(b.getWorldPosition(new THREE.Vector3())).normalize();
+ const parentInverse=b.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+ const target=d.clone().lerp(down,Number($(id).value)/100).normalize();
+ const q=new THREE.Quaternion().setFromUnitVectors(d.applyQuaternion(parentInverse),target.applyQuaternion(parentInverse));
+ b.quaternion.premultiply(q);posed.updateMatrixWorld(true);
+ }
+ syncJoint();$("stanceStatus").textContent="Stance applied; individual joints remain editable.";
+}
+$("stanceArms").oninput=$("stanceLegs").oninput=applyStance;
+$("stanceNatural").onclick=()=>{$("stanceArms").value=92;$("stanceLegs").value=85;applyStance();};
+$("stanceA").onclick=()=>{$("stanceArms").value=0;$("stanceLegs").value=0;applyStance();};
+
 document.title="Kumar Studio V5.0";
 
 
