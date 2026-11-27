@@ -3445,6 +3445,35 @@ blenderPanel.innerHTML='<summary>Blender Python Bridge</summary><button id="blen
 document.querySelector("aside").prepend(blenderPanel);
 let blenderPreview=null,blenderMixer=null,blenderSkeleton=null;const blenderClock=new THREE.Clock();
 $("blenderExport").onclick=async()=>{try{if(!posed||restRig!==posed)throw Error("Build skeleton first.");const {GLTFExporter}=await import("three/addons/exporters/GLTFExporter.js");posed.updateMatrixWorld(true);const result=await new GLTFExporter().parseAsync(posed,{binary:true,onlyVisible:false});const url=URL.createObjectURL(new Blob([result],{type:"model/gltf-binary"}));const a=document.createElement("a");a.href=url;a.download="kumar-character.glb";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);$("blenderStatus").textContent="Character rig exported.";}catch(e){$("blenderStatus").textContent=e.message;}};
+const animatedExport=document.createElement("button");
+animatedExport.textContent="Export selected motion for Blender (.glb)";
+$("blenderExport").after(animatedExport);
+animatedExport.onclick=async()=>{
+ const status=$("blenderStatus");
+ let rig=null,snapshot=null;
+ try{
+  motionPause();
+  if(!motionCapture())throw Error("Build skeleton first");
+  rig=posed;snapshot=motionBase;
+  const mode=$("motionPreset").value;
+  const duration=(actingDurations[mode]||({Jump:1400,"Flying Launch":2200,"Sit Down":1800,"Stand Up":1800}[mode])||Number($("motionSteps").value)*550)/1000;
+  const count=Math.max(2,Math.ceil(duration*30)+1);
+  const times=[],values=bones.map(()=>({q:[],p:[]}));
+  for(let i=0;i<count;i++){
+   times.push(i*duration/(count-1));motionPose(i/(count-1));
+   bones.forEach((b,j)=>{values[j].q.push(...b.quaternion.toArray());values[j].p.push(...b.position.toArray());});
+  }
+  const tracks=bones.flatMap((b,j)=>[new THREE.QuaternionKeyframeTrack(b.uuid+".quaternion",times,values[j].q),new THREE.VectorKeyframeTrack(b.uuid+".position",times,values[j].p)]);
+  motionRestore();
+  const clip=new THREE.AnimationClip(mode,duration,tracks);
+  const {GLTFExporter}=await import("three/addons/exporters/GLTFExporter.js");
+  if(posed!==rig)throw Error("Character changed during export");
+  const result=await new GLTFExporter().parseAsync(rig,{binary:true,onlyVisible:false,animations:[clip]});
+  const url=URL.createObjectURL(new Blob([result],{type:"model/gltf-binary"}));
+  const a=document.createElement("a");a.href=url;a.download="kumar-animated.glb";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  status.textContent="Animated GLB exported: "+mode+" ("+count+" samples).";
+ }catch(e){status.textContent=e.message;}finally{if(snapshot&&motionBase===snapshot&&posed===rig)motionRestore();}
+};
 function clearBlenderPreview(){
  if(blenderPreview)scene.remove(blenderPreview);
  if(blenderSkeleton){
