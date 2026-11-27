@@ -41,5 +41,38 @@ function refresh(){const list=bridge.list(),sel=$('refBlocks');sel.replaceChildr
 panel.querySelectorAll('[data-shape]').forEach(b=>b.onclick=()=>{bridge.add(b.dataset.shape);selected=bridge.list().length-1;refresh();say('3D '+b.dataset.shape+' added. Adjust its position, size and rotation.');});
 $('refBlocks').onchange=e=>{selected=e.target.value===''?-1:Number(e.target.value);refresh();};
 $('refRemove').onclick=()=>{if(selected<0)return;bridge.select(selected);bridge.remove();selected=-1;refresh();say('Selected shape deleted.');};
+
+// Finger-first vertex editing: select a point by tapping a mesh and drag it in camera plane.
+const meshEdit=document.createElement('section');meshEdit.id='refMeshEdit';
+meshEdit.innerHTML=`<h4>Mesh Edit (Touch)</h4>
+<label><input id="refEditOn" type="checkbox"> Enable vertex editing</label>
+<label><input id="refMirror" type="checkbox" checked> Mirror left / right</label>
+<p>Choose a block, then tap and drag its surface to reshape the nearest vertex. Two-finger navigation works when edit mode is OFF.</p>
+<div class="refButtons"><button id="refUndoVertex" type="button">Undo Vertex</button><button id="refSmooth" type="button">Smooth Mesh</button></div>
+<p id="refEditStatus" aria-live="polite">Select a block and enable editing.</p>`;
+$('refExport').before(meshEdit);
+const edit=bridge.edit;let gesture=null,lastEdit=null;
+const canvas=edit.canvas,editStatus=msg=>$('refEditStatus').textContent=msg;
+function endGesture(){gesture=null;edit.setOrbit(true);}
+canvas.addEventListener('pointerdown',e=>{
+ if(!$('refEditOn').checked||e.button!==0||!edit.active()||!e.isPrimary)return;
+ const hit=edit.selectAt(e.clientX,e.clientY);if(!hit)return;
+ e.preventDefault();e.stopImmediatePropagation();
+ gesture={pointer:e.pointerId,index:hit.index,world:hit.world,x:e.clientX,y:e.clientY,delta:[0,0,0]};
+ edit.setOrbit(false);canvas.setPointerCapture(e.pointerId);editStatus('Editing vertex '+hit.index+' · drag to reshape');
+},true);
+canvas.addEventListener('pointermove',e=>{
+ if(!gesture||gesture.pointer!==e.pointerId)return;
+ e.preventDefault();e.stopImmediatePropagation();
+ const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;
+ const d=edit.screenDeltaToLocal(dx,dy,gesture.world);
+ if(edit.moveVertex(gesture.index,d,$('refMirror').checked)){for(let i=0;i<3;i++)gesture.delta[i]+=d[i];gesture.x=e.clientX;gesture.y=e.clientY;}
+},true);
+canvas.addEventListener('pointerup',e=>{if(!gesture||gesture.pointer!==e.pointerId)return;e.preventDefault();e.stopImmediatePropagation();lastEdit={index:gesture.index,delta:[...gesture.delta],mirror:$('refMirror').checked,block:edit.active()};endGesture();},true);
+canvas.addEventListener('pointercancel',endGesture,true);
+$('refEditOn').onchange=()=>{endGesture();editStatus($('refEditOn').checked?'Tap and drag a selected block to move a vertex.':'Vertex edit disabled; camera navigation restored.');};
+$('refUndoVertex').onclick=()=>{if(!lastEdit||lastEdit.block!==edit.active()){editStatus('No vertex edit to undo on this block.');return;}edit.moveVertex(lastEdit.index,lastEdit.delta.map(v=>-v),lastEdit.mirror);lastEdit=null;editStatus('Last vertex drag reversed.');};
+$('refSmooth').onclick=()=>{if(edit.smooth(1))editStatus('Mesh smoothing applied. Note: sharp edges may soften.');else editStatus('Select an indexed 3D mesh first.');};
+
 $('refExport').onclick=()=>{const data={format:'kumar-blockout-v1',blocks:bridge.list()};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='kumar-character-blockout.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1200);say('Blockout JSON exported. Reference image is not included.');};
 })();
