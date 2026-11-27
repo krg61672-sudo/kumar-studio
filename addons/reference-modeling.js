@@ -119,36 +119,67 @@ $('refDeformReset').onclick=()=>setDeform();
 
 // Finger-first vertex editing: select a point by tapping a mesh and drag it in camera plane.
 const meshEdit=document.createElement('section');meshEdit.id='refMeshEdit';
-meshEdit.innerHTML=`<h4>Mesh Edit (Touch)</h4>
-<label><input id="refEditOn" type="checkbox"> Enable vertex editing</label>
-<label><input id="refMirror" type="checkbox" checked> Mirror left / right</label>
-<p>Choose a block, then tap and drag its surface to reshape the nearest vertex. Two-finger navigation works when edit mode is OFF.</p>
-<div class="refButtons"><button id="refUndoVertex" type="button">Undo Vertex</button><button id="refSmooth" type="button">Smooth Mesh</button></div>
-<p id="refEditStatus" aria-live="polite">Select a block and enable editing.</p>`;
+meshEdit.innerHTML=`<h4>Freehand Sculpt · Finger Brush</h4>
+<label><input id="refEditOn" type="checkbox"> Enable finger sculpt</label>
+<label>Brush action <select id="refBrushMode"><option value="grab">Grab / Stretch (drag any direction)</option><option value="inflate">Pull Out (raise surface)</option><option value="deflate">Push In (dent surface)</option></select></label>
+<label>Brush size <input id="refBrushRadius" type="range" min="5" max="100" value="38"></label>
+<label>Brush strength <input id="refBrushStrength" type="range" min="5" max="100" value="60"></label>
+<label><input id="refMirror" type="checkbox"> Mirror left / right (optional)</label>
+<p>Choose a shape, enable sculpt, then drag your finger anywhere on its surface. Grab stretches freely; Pull Out and Push In raise or indent the touched area. Switch off sculpt to orbit the camera.</p>
+<div class="refButtons"><button id="refUndoVertex" type="button">Undo Last Stroke</button><button id="refSmooth" type="button">Smooth Mesh</button></div>
+<p id="refEditStatus" aria-live="polite">Select a shape and enable finger sculpt.</p>`;
 $('refExport').before(meshEdit);
 captureScaleBaseline();
 const edit=bridge.edit;let gesture=null,lastEdit=null;
 const canvas=edit.canvas,editStatus=msg=>$('refEditStatus').textContent=msg;
 function endGesture(){gesture=null;edit.setOrbit(true);}
+function applyStroke(e){
+ if(!gesture||gesture.pointer!==e.pointerId)return;
+ const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;
+ if(Math.abs(dx)+Math.abs(dy)<.1)return;
+ const mode=$('refBrushMode').value;
+ const radius=Number($('refBrushRadius').value)/100*.8+.025;
+ const strength=Number($('refBrushStrength').value)/100;
+ let delta;
+ if(mode==='grab')delta=edit.screenDeltaToLocal(dx,dy,gesture.world);
+ else {
+  const magnitude=Math.max(.002,Math.hypot(dx,dy)*.0035);
+  const normal=gesture.normal;
+  const sign=mode==='inflate'?1:-1;
+  delta=[normal[0]*magnitude*sign,normal[1]*magnitude*sign,normal[2]*magnitude*sign];
+ }
+ if(edit.brushMove(gesture.center,delta,radius,strength,$('refMirror').checked)){
+  gesture.x=e.clientX;gesture.y=e.clientY;
+  gesture.world=edit.active().localToWorld(new THREE.Vector3(...gesture.center)).toArray();
+ }
+}
 canvas.addEventListener('pointerdown',e=>{
  if(!$('refEditOn').checked||e.button!==0||!edit.active()||!e.isPrimary)return;
- const hit=edit.selectAt(e.clientX,e.clientY);if(!hit)return;
+ const hit=edit.brushAt(e.clientX,e.clientY);if(!hit)return;
  e.preventDefault();e.stopImmediatePropagation();
- gesture={pointer:e.pointerId,index:hit.index,world:hit.world,x:e.clientX,y:e.clientY,delta:[0,0,0]};
- edit.setOrbit(false);canvas.setPointerCapture(e.pointerId);editStatus('Editing vertex '+hit.index+' · drag to reshape');
+ const mesh=edit.active();
+ gesture={pointer:e.pointerId,center:hit.local,world:hit.world,normal:hit.normal,x:e.clientX,y:e.clientY,mesh,geometry:mesh.geometry.attributes.position.array.slice()};
+ edit.setOrbit(false);canvas.setPointerCapture(e.pointerId);editStatus('Sculpting · drag to reshape surface');
 },true);
 canvas.addEventListener('pointermove',e=>{
  if(!gesture||gesture.pointer!==e.pointerId)return;
- e.preventDefault();e.stopImmediatePropagation();
- const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;
- const d=edit.screenDeltaToLocal(dx,dy,gesture.world);
- if(edit.moveVertex(gesture.index,d,$('refMirror').checked)){for(let i=0;i<3;i++)gesture.delta[i]+=d[i];gesture.x=e.clientX;gesture.y=e.clientY;}
+ e.preventDefault();e.stopImmediatePropagation();applyStroke(e);
 },true);
-canvas.addEventListener('pointerup',e=>{if(!gesture||gesture.pointer!==e.pointerId)return;e.preventDefault();e.stopImmediatePropagation();lastEdit={index:gesture.index,delta:[...gesture.delta],mirror:$('refMirror').checked,block:edit.active()};endGesture();},true);
+canvas.addEventListener('pointerup',e=>{
+ if(!gesture||gesture.pointer!==e.pointerId)return;
+ e.preventDefault();e.stopImmediatePropagation();applyStroke(e);
+ lastEdit={mesh:gesture.mesh,geometry:gesture.geometry};endGesture();editStatus('Stroke applied. Undo is available.');
+},true);
 canvas.addEventListener('pointercancel',endGesture,true);
-$('refEditOn').onchange=()=>{endGesture();editStatus($('refEditOn').checked?'Tap and drag a selected block to move a vertex.':'Vertex edit disabled; camera navigation restored.');};
-$('refUndoVertex').onclick=()=>{if(!lastEdit||lastEdit.block!==edit.active()){editStatus('No vertex edit to undo on this block.');return;}edit.moveVertex(lastEdit.index,lastEdit.delta.map(v=>-v),lastEdit.mirror);lastEdit=null;editStatus('Last vertex drag reversed.');};
-$('refSmooth').onclick=()=>{if(edit.smooth(1))editStatus('Mesh smoothing applied. Note: sharp edges may soften.');else editStatus('Select an indexed 3D mesh first.');};
+$('refEditOn').onchange=()=>{endGesture();editStatus($('refEditOn').checked?'Drag directly on your selected shape to sculpt.':'Sculpt off; camera navigation restored.');};
+$('refUndoVertex').onclick=()=>{
+ if(!lastEdit||lastEdit.mesh!==edit.active()){editStatus('No stroke to undo on this shape.');return;}
+ const attr=lastEdit.mesh.geometry.attributes.position;
+ if(attr.array.length!==lastEdit.geometry.length){editStatus('Geometry changed; cannot undo that stroke.');return;}
+ attr.array.set(lastEdit.geometry);attr.needsUpdate=true;lastEdit.mesh.geometry.computeVertexNormals();lastEdit.mesh.geometry.computeBoundingSphere();lastEdit.mesh.geometry.computeBoundingBox();
+ lastEdit=null;editStatus('Last sculpt stroke undone.');
+};
+$('refSmooth').onclick=()=>{if(edit.smooth(1))editStatus('Mesh smoothing applied.');else editStatus('Select an indexed 3D mesh first.');};
 
 $('refExport').onclick=()=>{const data={format:'kumar-blockout-v1',blocks:bridge.list()};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='kumar-character-blockout.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1200);say('Blockout JSON exported. Reference image is not included.');};
 })();
