@@ -42,6 +42,7 @@ function choose(name){
  const blockPanel=document.getElementById('blockingStudio');
  if(blockPanel)blockPanel.hidden=!['Rigging','Animation'].includes(name);
  const body=document.getElementById('ksTimelineBody');body.classList.toggle('compact',name!=='Animation');
+ window.KumarWorkspaceVisibility?.(name);
  window.dispatchEvent(new Event('resize'));
 }
 modes.forEach(([name])=>{const b=button(name,name,()=>choose(name));b.dataset.mode=name;tabs.append(b);});
@@ -103,5 +104,6 @@ body.ks-pro #info{display:none}
 @media(max-width:700px){body.ks-pro>header{gap:5px;padding:0 6px;height:54px;flex-basis:54px}.ks-logo{font-size:22px}.ks-brand{min-width:75px;font-size:9px}#ksProTabs button{min-width:63px;font-size:11px;padding:0 5px!important}.ks-header-actions button{width:32px!important;min-width:32px!important}#ksInspector{width:42vw;flex-basis:42vw}#ksProTools{width:47px;flex-basis:47px;padding:5px 2px}.ks-tool-glyph{font-size:19px}.ks-tool-label{font-size:8px}#ksProTools button{min-height:49px!important}#ksViewBar{right:auto}#ksViewBar>span{display:none}#ksViewBar button{min-width:42px!important;font-size:10px}body.ks-pro #ksTouchToolbar{top:58px!important}}
 `;document.head.append(css);
 choose('Modeling');
+window.addEventListener('load',()=>window.KumarWorkspaceVisibility?.(mode));
 setTimeout(()=>window.dispatchEvent(new Event('resize')),150);
 })();
