@@ -3675,6 +3675,44 @@ window.KumarShapeBridge={
    const point=new THREE.Vector3().fromBufferAttribute(position,index);
    return {index,point:point.toArray(),world:mesh.localToWorld(point.clone()).toArray()};
   },
+  brushAt(clientX,clientY){
+   const mesh=activeModelingBlock;if(!mesh)return null;
+   const rect=renderer.domElement.getBoundingClientRect();
+   const pointer=new THREE.Vector2((clientX-rect.left)/rect.width*2-1,-(clientY-rect.top)/rect.height*2+1);
+   const ray=new THREE.Raycaster();ray.setFromCamera(pointer,camera);
+   const hit=ray.intersectObject(mesh,false)[0];if(!hit)return null;
+   const local=mesh.worldToLocal(hit.point.clone());
+   const normal=hit.face.normal.clone().transformDirection(new THREE.Matrix4().extractRotation(mesh.matrixWorld));
+   return {local:local.toArray(),world:hit.point.toArray(),normal:normal.toArray()};
+  },
+  brushMove(center,delta,radius,strength=1,mirror=false){
+   const mesh=activeModelingBlock;if(!mesh)return false;
+   const attr=mesh.geometry.attributes.position;if(!attr)return false;
+   const c=new THREE.Vector3(...center),d=new THREE.Vector3(...delta);
+   const r=Math.max(.005,radius),r2=r*r;
+   const points=new Map();
+   for(let i=0;i<attr.count;i++){
+    const p=new THREE.Vector3().fromBufferAttribute(attr,i);
+    const key=p.x.toFixed(5)+','+p.y.toFixed(5)+','+p.z.toFixed(5);
+    if(!points.has(key))points.set(key,{p,indices:[]});
+    points.get(key).indices.push(i);
+   }
+   let changed=false;
+   for(const {p,indices} of points.values()){
+    const distance=p.distanceToSquared(c);
+    const mirrored=mirror?new THREE.Vector3(-c.x,c.y,c.z):null;
+    const md=mirrored?p.distanceToSquared(mirrored):Infinity;
+    const dist=Math.min(distance,md);if(dist>=r2)continue;
+    const t=1-Math.sqrt(dist)/r,weight=t*t*(3-2*t)*strength;
+    const movement=d.clone().multiplyScalar(weight);
+    if(md<distance)movement.x*=-1;
+    const next=p.clone().add(movement);
+    for(const i of indices)attr.setXYZ(i,next.x,next.y,next.z);
+    changed=true;
+   }
+   if(changed){attr.needsUpdate=true;mesh.geometry.computeVertexNormals();mesh.geometry.computeBoundingBox();mesh.geometry.computeBoundingSphere();}
+   return changed;
+  },
   moveVertex(index,delta,mirror=false){
    const mesh=activeModelingBlock;if(!mesh||!Array.isArray(delta)||!delta.every(Number.isFinite))return false;
    const g=mesh.geometry,attr=g.attributes.position;if(index<0||index>=attr.count)return false;
