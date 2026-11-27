@@ -139,6 +139,31 @@ label{display:block;margin-top:10px}
 <input id="loadPose" type="file" accept=".json">
 <button id="exportPose">Export Posed Character</button>
 <button id="exitPose">Return to Sculpting</button>
+</details>
+<details id="preproductionDepartment">
+<summary>SECTION 1 — PRE-PRODUCTION</summary>
+<p>Plan any original project here. Nothing is published or uploaded.</p>
+<label>Project title</label><input id="ppTitle" type="text" maxlength="120" placeholder="Untitled Donghua Project">
+<label>Format</label><select id="ppFormat"><option>Series</option><option>Film</option><option>Short Film</option><option>Trailer</option></select>
+<label>Episode / sequence</label><input id="ppEpisode" type="text" maxlength="80" placeholder="Episode 1">
+<label>Creative brief</label><textarea id="ppBrief" rows="3" maxlength="4000" placeholder="Visual style, audience, goals..."></textarea>
+<h4>Scene & Shot Planner</h4>
+<label>Scene</label><input id="ppScene" type="text" maxlength="100" placeholder="Scene 01">
+<label>Shot description</label><textarea id="ppAction" rows="3" maxlength="4000" placeholder="What happens in this shot?"></textarea>
+<label>Camera</label><select id="ppCamera"><option>Wide</option><option>Medium</option><option>Close-up</option><option>Extreme close-up</option><option>Over shoulder</option><option>Tracking</option><option>POV</option><option>Aerial</option></select>
+<label>Duration (seconds)</label><input id="ppDuration" type="number" min="0.1" max="3600" step="0.1" value="5">
+<label>Dialogue / audio notes</label><textarea id="ppAudio" rows="2" maxlength="4000"></textarea>
+<label>Storyboard image URL (optional)</label><input id="ppImage" type="url" placeholder="https://...">
+<label>Production status</label><select id="ppShotStatus"><option>Planned</option><option>Storyboard ready</option><option>Approved</option><option>In production</option><option>Completed</option></select>
+<button id="ppAddShot" type="button">Add Shot</button>
+<button id="ppCancelEdit" type="button" hidden>Cancel Edit</button>
+<p id="ppSummary" aria-live="polite">No shots yet.</p>
+<div id="ppShots"></div>
+<h4>Project Data</h4>
+<button id="ppExport" type="button">Export Pre-production JSON</button>
+<label>Import saved pre-production JSON</label><input id="ppImport" type="file" accept=".json,application/json">
+<button id="ppClear" type="button">Clear Pre-production Project</button>
+<p id="ppStatus" aria-live="polite"></p>
 </details></aside>
 <div id="view">
 <div id="info">KUMAR STUDIO<br>Character Sculpting</div>
@@ -3547,6 +3572,58 @@ renderer.render(scene,camera);
 });
 
 $('load').click();
+</script>
+
+<script>
+(function(){
+"use strict";
+const $=id=>document.getElementById(id), storageKey="kumar-studio-preproduction-v1";
+const fields=["ppTitle","ppFormat","ppEpisode","ppBrief"];
+const shotFields=["ppScene","ppAction","ppCamera","ppDuration","ppAudio","ppImage","ppShotStatus"];
+let shots=[],editing=null;
+const say=message=>{$("ppStatus").textContent=message;};
+const esc=s=>String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+const project=()=>({version:1,title:$("ppTitle").value,format:$("ppFormat").value,episode:$("ppEpisode").value,brief:$("ppBrief").value,shots});
+function persist(){try{localStorage.setItem(storageKey,JSON.stringify(project()));say("Saved locally on this device.");}catch(e){say("Local save unavailable. Export JSON to keep your work.");}}
+function resetForm(){editing=null;shotFields.forEach(id=>{if(id==="ppDuration")$(id).value="5";else if(id==="ppCamera")$(id).value="Wide";else if(id==="ppShotStatus")$(id).value="Planned";else $(id).value="";});$("ppAddShot").textContent="Add Shot";$("ppCancelEdit").hidden=true;}
+function render(){
+const total=shots.reduce((n,s)=>n+Number(s.duration||0),0);
+$("ppSummary").textContent=shots.length+" shots • "+total.toFixed(1)+" seconds planned • "+shots.filter(s=>s.status==="Approved"||s.status==="Completed").length+" approved/completed";
+$("ppShots").replaceChildren();
+shots.forEach((s,i)=>{
+const item=document.createElement("div");item.style.cssText="padding:10px;margin:8px 0;border:1px solid #526984;border-radius:8px";
+const title=document.createElement("strong");title.textContent=(i+1)+". "+s.scene+" — "+s.camera+" ("+s.duration+"s)";
+const desc=document.createElement("p");desc.textContent=s.action||"No description";
+const state=document.createElement("p");state.textContent="Status: "+s.status;
+item.append(title,desc,state);
+if(s.image&&/^https:\/\//i.test(s.image)){const a=document.createElement("a");a.href=s.image;a.textContent="Open storyboard reference";a.target="_blank";a.rel="noopener noreferrer";a.style.color="#edc47c";item.append(a);}
+[["Edit",()=>{editing=i;$("ppScene").value=s.scene;$("ppAction").value=s.action;$("ppCamera").value=s.camera;$("ppDuration").value=s.duration;$("ppAudio").value=s.audio;$("ppImage").value=s.image;$("ppShotStatus").value=s.status;$("ppAddShot").textContent="Update Shot";$("ppCancelEdit").hidden=false;}],["↑",()=>move(i,-1)],["↓",()=>move(i,1)],["Delete",()=>{if(!confirm("Delete this shot?"))return;shots.splice(i,1);resetForm();persist();render();}]].forEach(([label,action])=>{const b=document.createElement("button");b.type="button";b.className="small";b.textContent=label;b.onclick=action;item.append(b);});
+$("ppShots").append(item);
+});
+}
+function move(i,d){const j=i+d;if(j<0||j>=shots.length)return;[shots[i],shots[j]]=[shots[j],shots[i]];resetForm();persist();render();}
+function validate(raw){
+if(!raw||raw.version!==1||!Array.isArray(raw.shots)||raw.shots.length>2000)throw Error("Unsupported project format");
+const str=(v,max)=>String(v??"").slice(0,max);
+return {title:str(raw.title,120),format:["Series","Film","Short Film","Trailer"].includes(raw.format)?raw.format:"Series",episode:str(raw.episode,80),brief:str(raw.brief,4000),shots:raw.shots.map(s=>{if(!s||typeof s!=="object")throw Error("Invalid shot");const duration=Number(s.duration);if(!Number.isFinite(duration)||duration<0.1||duration>3600)throw Error("Invalid shot duration");return {scene:str(s.scene,100),action:str(s.action,4000),camera:["Wide","Medium","Close-up","Extreme close-up","Over shoulder","Tracking","POV","Aerial"].includes(s.camera)?s.camera:"Wide",duration,audio:str(s.audio,4000),image:/^https:\/\//i.test(str(s.image,2000))?str(s.image,2000):"",status:["Planned","Storyboard ready","Approved","In production","Completed"].includes(s.status)?s.status:"Planned"};})};
+}
+function load(data){const p=validate(data);$("ppTitle").value=p.title;$("ppFormat").value=p.format;$("ppEpisode").value=p.episode;$("ppBrief").value=p.brief;shots=p.shots;resetForm();render();}
+$("ppAddShot").onclick=()=>{
+const duration=Number($("ppDuration").value);
+if(!Number.isFinite(duration)||duration<0.1||duration>3600){say("Duration must be between 0.1 and 3600 seconds.");return;}
+const s={scene:$("ppScene").value.trim()||"Untitled scene",action:$("ppAction").value.trim(),camera:$("ppCamera").value,duration,audio:$("ppAudio").value.trim(),image:$("ppImage").value.trim(),status:$("ppShotStatus").value};
+if(s.image&&!/^https:\/\//i.test(s.image)){say("Storyboard URL must start with https://");return;}
+if(editing===null)shots.push(s);else shots[editing]=s;
+resetForm();persist();render();
+};
+$("ppCancelEdit").onclick=resetForm;
+fields.forEach(id=>$(id).addEventListener("change",persist));
+$("ppExport").onclick=()=>{const blob=new Blob([JSON.stringify(project(),null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="kumar-preproduction.json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);say("Project JSON exported.");};
+$("ppImport").onchange=async e=>{const f=e.target.files[0];if(!f)return;try{if(f.size>2000000)throw Error("File too large");load(JSON.parse(await f.text()));persist();say("Project imported.");}catch(err){say("Import failed: "+err.message);}finally{e.target.value="";}};
+$("ppClear").onclick=()=>{if(!confirm("Clear this pre-production project? Export first if needed."))return;load({version:1,title:"",format:"Series",episode:"",brief:"",shots:[]});persist();};
+try{const saved=localStorage.getItem(storageKey);if(saved)load(JSON.parse(saved));}catch(e){say("Saved project could not be loaded.");}
+render();
+})();
 </script>
 </body>
 </html>
