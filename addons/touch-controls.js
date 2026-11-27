@@ -8,11 +8,11 @@ main>aside input[type=range]{height:38px;min-height:38px;touch-action:pan-y;curs
 main>aside input[type=range]::-webkit-slider-thumb{width:27px;height:27px}
 main>aside summary{min-height:48px;display:list-item;align-content:center}
 #blockingStudio .blkKeys button{min-height:46px;min-width:52px}
-#ksTouchToolbar{position:absolute;bottom:14px;right:12px;z-index:5;display:flex;gap:7px;align-items:center;max-width:calc(100% - 24px);flex-wrap:wrap;justify-content:flex-end;pointer-events:none}
-#ksTouchToolbar button{pointer-events:auto;border:1px solid #607998;background:#1b2c44eb;color:white;border-radius:12px;min-width:49px;min-height:49px;padding:10px;font:600 13px Arial;box-shadow:0 3px 14px #0005}
+#ksTouchToolbar{position:absolute;top:56px;left:8px;bottom:auto;right:auto;z-index:8;display:flex;gap:5px;align-items:center;width:max-content;max-width:calc(100% - 16px);flex-wrap:nowrap;pointer-events:none;background:#12243bce;border:1px solid #405570;border-radius:12px;padding:5px}
+#ksTouchToolbar button{pointer-events:auto;display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px!important;width:44px!important;max-width:44px!important;height:44px!important;min-width:44px!important;min-height:44px!important;margin:0!important;padding:4px!important;border:1px solid #607998;background:#1b2c44eb;color:white;border-radius:9px;font:600 11px Arial;box-shadow:none}
 #ksTouchToolbar button:active{background:#876331}
-#ksTouchHint{position:absolute;bottom:73px;right:12px;z-index:4;background:#15243bc9;color:#f3cf91;border-radius:9px;padding:6px 9px;font:11px Arial;pointer-events:none}
-@media(max-width:640px){main>aside{min-width:155px;width:43vw;max-width:43vw}#ksTouchToolbar{bottom:8px;right:6px;gap:4px}#ksTouchToolbar button{min-height:45px;min-width:45px;padding:8px}#ksTouchHint{display:none}main>aside button{min-height:46px}}
+#ksTouchHint{position:absolute;top:115px;left:8px;bottom:auto;right:auto;z-index:4;background:#15243bc9;color:#f3cf91;border-radius:9px;padding:6px 9px;font:11px Arial;pointer-events:none}
+@media(max-width:640px){main>aside{min-width:155px;width:43vw;max-width:43vw}#ksTouchToolbar{top:48px;left:4px;bottom:auto;right:auto;gap:3px;padding:3px}#ksTouchToolbar button{flex-basis:36px!important;width:36px!important;max-width:36px!important;height:40px!important;min-width:36px!important;min-height:40px!important;padding:2px!important;font-size:10px}#ksTouchHint{display:none}main>aside button{min-height:46px}}
 `;document.head.appendChild(css);
 const view=document.getElementById('view');if(!view)return;
 const bar=document.createElement('div');bar.id='ksTouchToolbar';bar.setAttribute('aria-label','Finger touch quick controls');
