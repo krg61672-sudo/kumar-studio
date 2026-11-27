@@ -3625,6 +3625,21 @@ window.KumarBlockingBridge={
 
 let shadowRig=null;
 function refreshShadowCasters(){if(shadowRig===posed)return;shadowRig=posed;if(posed)posed.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});}
+
+const modelingGroup=new THREE.Group();modelingGroup.name="KumarModelingBlocks";scene.add(modelingGroup);
+const modelingBlocks=new Map();let modelingSerial=0;
+window.KumarModelingBridge={
+ add(kind){const geometries={box:()=>new THREE.BoxGeometry(.3,.3,.3),sphere:()=>new THREE.SphereGeometry(.18,24,16),cylinder:()=>new THREE.CylinderGeometry(.16,.16,.4,24),cone:()=>new THREE.ConeGeometry(.18,.4,24)};
+ if(!geometries[kind])return null;
+ const mesh=new THREE.Mesh(geometries[kind](),new THREE.MeshStandardMaterial({color:0xb7bdce,roughness:.7}));
+ mesh.position.y=1;mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData.modelingId=++modelingSerial;
+ modelingGroup.add(mesh);modelingBlocks.set(modelingSerial,mesh);return modelingSerial;},
+ set(id,property,axis,value){const mesh=modelingBlocks.get(Number(id));if(!mesh||!['position','rotation','scale'].includes(property)||!['x','y','z'].includes(axis)||!Number.isFinite(Number(value)))return false;
+ const n=Number(value);mesh[property][axis]=property==='rotation'?THREE.MathUtils.degToRad(n):property==='scale'?Math.max(.01,n):n;return true;},
+ get(id){const mesh=modelingBlocks.get(Number(id));if(!mesh)return null;return {id:Number(id),position:mesh.position.toArray(),rotation:[mesh.rotation.x,mesh.rotation.y,mesh.rotation.z].map(THREE.MathUtils.radToDeg),scale:mesh.scale.toArray()};},
+ remove(id){const mesh=modelingBlocks.get(Number(id));if(!mesh)return false;modelingGroup.remove(mesh);mesh.geometry.dispose();mesh.material.dispose();modelingBlocks.delete(Number(id));return true;},
+ list(){return [...modelingBlocks.keys()];}
+};
 renderer.setAnimationLoop(()=>{refreshShadowCasters();
 if(blenderMixer)blenderMixer.update(Math.min(.1,blenderClock.getDelta()));else blenderClock.getDelta();
 if(posed&&rigGeneration!==generation)clearRig();
@@ -3690,5 +3705,6 @@ render();
 <script src="./addons/character-workspace.js" defer></script>
 <script src="./addons/blocking-studio.js" defer></script>
 <script src="./addons/touch-controls.js" defer></script>
+<script src="./addons/reference-modeling.js" defer></script>
 </body>
 </html>
