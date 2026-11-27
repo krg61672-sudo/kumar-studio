@@ -93,7 +93,22 @@ $('refShapeOpacity').oninput=()=>{if(selected<0){say('Select a shape first.');re
 
 panel.querySelectorAll('[data-shape]').forEach(b=>b.onclick=()=>{bridge.add(b.dataset.shape);selected=bridge.list().length-1;refresh();captureScaleBaseline();setDeform();say('3D '+b.dataset.shape+' added. Adjust its position, size and rotation.');});
 $('refBlocks').onchange=e=>{selected=e.target.value===''?-1:Number(e.target.value);refresh();captureScaleBaseline();deformIds.forEach((id,i)=>{$(id).value=String([100,100,100,0,0][i]);});};
-$('refRemove').onclick=()=>{if(selected<0)return;bridge.select(selected);bridge.remove();selected=-1;refresh();captureScaleBaseline();say('Selected shape deleted.');};
+function deleteSelectedShape(){
+ const shapes=bridge.list();
+ if(!shapes.length){say('No 3D blockout shape exists to delete.');return;}
+ if(selected<0||selected>=shapes.length){selected=shapes.length-1;}
+ bridge.select(selected);
+ if(!bridge.remove()){say('Could not delete the selected shape.');return;}
+ selected=Math.min(selected,bridge.list().length-1);
+ refresh();captureScaleBaseline();say('Shape deleted. '+bridge.list().length+' remaining.');
+}
+$('refRemove').onclick=deleteSelectedShape;
+const quickDelete=document.createElement('button');
+quickDelete.id='refQuickDelete';quickDelete.type='button';quickDelete.textContent='🗑 Delete Selected Shape';
+quickDelete.style.cssText='background:#743338;border:1px solid #d96c72;color:white;font-weight:700;min-height:44px';
+$('refBlocks').closest('label').after(quickDelete);
+quickDelete.onclick=deleteSelectedShape;
+
 
 
 // Non-destructive local geometry deformation on a selected primitive.
