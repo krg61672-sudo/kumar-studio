@@ -3656,7 +3656,62 @@ window.KumarShapeBridge={
  return true;},
  remove(){if(!activeModelingBlock)return false;modelingBlocks.remove(activeModelingBlock);activeModelingBlock.geometry.dispose();activeModelingBlock.material.dispose();activeModelingBlock=null;return true;},
  list(){return modelingBlocks.children.map((m,i)=>({index:i,type:m.geometry.type,position:m.position.toArray(),scale:m.scale.toArray(),rotation:[m.rotation.x,m.rotation.y,m.rotation.z]}));},
- clear(){for(const m of [...modelingBlocks.children]){modelingBlocks.remove(m);m.geometry.dispose();m.material.dispose();}activeModelingBlock=null;}
+ clear(){for(const m of [...modelingBlocks.children]){modelingBlocks.remove(m);m.geometry.dispose();m.material.dispose();}activeModelingBlock=null;},
+ edit:{
+  canvas:renderer.domElement,
+  setOrbit(enabled){controls.enabled=enabled;},
+  active(){return activeModelingBlock;},
+  selectAt(clientX,clientY){
+   if(!activeModelingBlock)return null;
+   const rect=renderer.domElement.getBoundingClientRect();
+   const mouse=new THREE.Vector2((clientX-rect.left)/rect.width*2-1,-(clientY-rect.top)/rect.height*2+1);
+   const ray=new THREE.Raycaster();ray.setFromCamera(mouse,camera);
+   const hits=ray.intersectObject(activeModelingBlock,false);
+   if(!hits.length)return null;
+   const mesh=activeModelingBlock,position=mesh.geometry.attributes.position;
+   const local=mesh.worldToLocal(hits[0].point.clone());
+   let index=0,dist=Infinity;
+   for(let i=0;i<position.count;i++){const d=local.distanceToSquared(new THREE.Vector3().fromBufferAttribute(position,i));if(d<dist){dist=d;index=i;}}
+   const point=new THREE.Vector3().fromBufferAttribute(position,index);
+   return {index,point:point.toArray(),world:mesh.localToWorld(point.clone()).toArray()};
+  },
+  moveVertex(index,delta,mirror=false){
+   const mesh=activeModelingBlock;if(!mesh||!Array.isArray(delta)||!delta.every(Number.isFinite))return false;
+   const g=mesh.geometry,attr=g.attributes.position;if(index<0||index>=attr.count)return false;
+   const original=new THREE.Vector3().fromBufferAttribute(attr,index),eps=1e-5;
+   const mirrored=new THREE.Vector3(-original.x,original.y,original.z);
+   for(let i=0;i<attr.count;i++){
+    const p=new THREE.Vector3().fromBufferAttribute(attr,i);
+    if(p.distanceToSquared(original)<eps){p.add(new THREE.Vector3(...delta));attr.setXYZ(i,p.x,p.y,p.z);}
+    else if(mirror&&Math.abs(original.x)>1e-5&&p.distanceToSquared(mirrored)<eps){p.add(new THREE.Vector3(-delta[0],delta[1],delta[2]));attr.setXYZ(i,p.x,p.y,p.z);}
+   }
+   attr.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();g.computeBoundingBox();return true;
+  },
+  screenDeltaToLocal(dx,dy,worldPoint){
+   const mesh=activeModelingBlock;if(!mesh)return [0,0,0];
+   const distance=camera.position.distanceTo(new THREE.Vector3(...worldPoint));
+   const height=2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2)*distance;
+   const scale=height/Math.max(1,renderer.domElement.clientHeight);
+   const right=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion);
+   const up=new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
+   const world=right.multiplyScalar(dx*scale).add(up.multiplyScalar(-dy*scale));
+   mesh.updateWorldMatrix(true,false);
+   return world.applyMatrix4(new THREE.Matrix4().copy(mesh.matrixWorld).invert().setPosition(0,0,0)).toArray();
+  },
+  smooth(iterations=1){
+   const mesh=activeModelingBlock;if(!mesh)return false;
+   const g=mesh.geometry,attr=g.attributes.position,index=g.index;
+   if(!index)return false;
+   for(let pass=0;pass<Math.min(3,iterations);pass++){
+    const neighbors=Array.from({length:attr.count},()=>new Set());
+    for(let i=0;i<index.count;i+=3){const a=index.getX(i),b=index.getX(i+1),c=index.getX(i+2);neighbors[a].add(b).add(c);neighbors[b].add(a).add(c);neighbors[c].add(a).add(b);}
+    const old=Array.from({length:attr.count},(_,i)=>new THREE.Vector3().fromBufferAttribute(attr,i));
+    const next=old.map((p,i)=>{if(!neighbors[i].size)return p;const avg=new THREE.Vector3();for(const j of neighbors[i])avg.add(old[j]);avg.divideScalar(neighbors[i].size);return p.clone().lerp(avg,.18);});
+    next.forEach((p,i)=>attr.setXYZ(i,p.x,p.y,p.z));
+   }
+   attr.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();return true;
+  }
+ }
 };
 
 renderer.setAnimationLoop(()=>{refreshShadowCasters();
