@@ -2,7 +2,7 @@
 (()=>{'use strict';
 const $=id=>document.getElementById(id),bridge=window.KumarShapeBridge,aside=document.querySelector('main>aside'),view=$('view');
 if(!bridge||!aside||!view||$('referenceModeling'))return;
-const panel=document.createElement('details');panel.id='referenceModeling';panel.open=false;
+const panel=document.createElement('details');panel.id='referenceModeling';panel.open=true;
 panel.innerHTML=`<summary>REFERENCE IMAGE & SHAPE MODELING</summary>
 <p>Use a local reference photo to guide manual 3D blockout. The photo stays in your browser.</p>
 <label>Upload reference image <input id="refFile" type="file" accept="image/png,image/jpeg,image/webp"></label>
@@ -20,13 +20,15 @@ panel.innerHTML=`<summary>REFERENCE IMAGE & SHAPE MODELING</summary>
 <button id="refExport" type="button">Export Blockout JSON</button>
 <p id="refStatus" aria-live="polite">Start with a reference image and simple shapes. This is manual blockout, not automatic image-to-3D conversion.</p>`;
 const nav=$('ksWorkflowNav');if(nav)nav.after(panel);else aside.prepend(panel);
+// Keep the reference editor first in Character, before library and legacy controls.
+const library=$('characterWorkspace');if(library)library.open=false;
 const css=document.createElement('style');css.textContent=`
 #referenceModeling .refButtons{display:grid;grid-template-columns:1fr 1fr;gap:5px}
 #referenceModeling .refButtons button{margin:0;font-size:12px}
 #refImageOverlay{position:absolute;left:50%;top:50%;max-width:none;max-height:none;object-fit:contain;transform:translate(-50%,-50%);pointer-events:none;z-index:1}
 #referenceModeling h4{margin:15px 0 5px;color:#f3cf91}
 `;document.head.appendChild(css);
-if(nav){const tabs=[...nav.querySelectorAll('button')],character=tabs.find(b=>b.textContent.trim()==='Character');if(character){const sync=()=>{panel.hidden=!character.classList.contains('active');};tabs.forEach(b=>b.addEventListener('click',()=>queueMicrotask(sync)));sync();}}
+if(nav){const tabs=[...nav.querySelectorAll('button')],character=tabs.find(b=>b.textContent.trim()==='Character');if(character){const sync=()=>{const active=character.classList.contains('active');panel.hidden=!active;if(active&&panel.open!==true)panel.open=true;};tabs.forEach(b=>b.addEventListener('click',()=>queueMicrotask(sync)));sync();}}
 const overlay=document.createElement('img');overlay.id='refImageOverlay';overlay.alt='Uploaded reference image';overlay.hidden=true;view.appendChild(overlay);
 let url=null,selected=-1;
 const say=s=>$('refStatus').textContent=s;
