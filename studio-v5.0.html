@@ -3674,7 +3674,47 @@ window.KumarAIModelBridge={
   return parts.length;
  }
 };
+// Parametric sculpt-ready organic human starter: smooth tapered mesh surfaces, not box primitives.
+function makeOrganicTube(rings,segments=24){
+ const verts=[],indices=[];
+ for(const [x,y,z,rx,rz] of rings)for(let j=0;j<segments;j++){
+  const a=j*2*Math.PI/segments;verts.push(x+rx*Math.cos(a),y,z+rz*Math.sin(a));
+ }
+ for(let i=0;i<rings.length-1;i++)for(let j=0;j<segments;j++){
+  const a=i*segments+j,b=i*segments+(j+1)%segments,c=(i+1)*segments+j,d=(i+1)*segments+(j+1)%segments;
+  indices.push(a,c,b,b,c,d);
+ }
+ for(let j=1;j<segments-1;j++){indices.push(0,j+1,j);const last=(rings.length-1)*segments;indices.push(last,last+j,last+j+1);}
+ const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));g.setIndex(indices);g.computeVertexNormals();return g;
+}
+function createHumanSculptStarter(){
+ saveModelingHistory();
+ const mat=(color)=>new THREE.MeshStandardMaterial({color,roughness:.82,side:THREE.DoubleSide});
+ const skin=mat(0xb7a9a0),suit=mat(0x747c87),hair=mat(0x23262d);
+ const add=(name,rings,material,segments=24)=>{
+  const m=new THREE.Mesh(makeOrganicTube(rings,segments),material.clone());
+  m.name=name;m.castShadow=true;m.receiveShadow=true;m.userData.humanPart=name;
+  referenceShapeGroup.add(m);return m;
+ };
+ add('Torso',[ [0,.90,0,.15,.13],[0,1.01,0,.19,.14],[0,1.15,0,.24,.17],[0,1.31,0,.28,.16],[0,1.40,0,.25,.15],[0,1.47,0,.10,.10] ],suit,40);
+ add('Neck',[[0,1.43,0,.09,.09],[0,1.52,0,.09,.09],[0,1.56,0,.085,.08]],skin);
+ add('Head',[[0,1.54,0,.07,.08],[0,1.60,0,.115,.115],[0,1.70,0,.14,.125],[0,1.80,0,.13,.12],[0,1.87,0,.085,.08],[0,1.90,0,.012,.012]],skin,40);
+ add('Hair cap',[[0,1.79,-.015,.137,.13],[0,1.84,-.015,.136,.13],[0,1.90,-.015,.075,.075],[0,1.92,-.015,.01,.01]],hair,32);
+ for(const sign of [-1,1]){
+  const x=sign;
+  add(sign<0?'Left upper arm':'Right upper arm',[[x*.23,1.40,0,.12,.12],[x*.32,1.32,0,.115,.11],[x*.42,1.17,0,.09,.085],[x*.48,1.08,0,.075,.075]],suit);
+  add(sign<0?'Left forearm':'Right forearm',[[x*.48,1.09,0,.08,.08],[x*.53,.94,0,.082,.07],[x*.59,.78,0,.05,.055]],suit);
+  add(sign<0?'Left hand':'Right hand',[[x*.59,.79,0,.055,.055],[x*.62,.71,0,.065,.025],[x*.63,.66,0,.04,.02]],skin);
+  add(sign<0?'Left thigh':'Right thigh',[[x*.13,.95,0,.14,.14],[x*.14,.80,0,.15,.15],[x*.15,.59,0,.12,.12],[x*.15,.48,0,.085,.09]],suit);
+  add(sign<0?'Left shin':'Right shin',[[x*.15,.49,0,.09,.09],[x*.15,.34,0,.10,.10],[x*.15,.15,0,.065,.065],[x*.15,.08,0,.055,.06]],suit);
+  add(sign<0?'Left foot':'Right foot',[[x*.15,.09,.02,.07,.08],[x*.15,.06,.11,.085,.12],[x*.15,.045,.19,.09,.045]],skin);
+ }
+ add('Ponytail',[[0,1.80,-.12,.07,.07],[0,1.70,-.19,.065,.06],[0,1.55,-.22,.055,.05],[0,1.40,-.23,.035,.035],[0,1.33,-.23,.006,.006]],hair);
+ activeModelingBlock=referenceShapeGroup.children[referenceShapeGroup.children.length-1];
+ return {parts:referenceShapeGroup.children.length};
+}
 window.KumarShapeBridge={
+ createHumanSculptStarter,
  add(type){const geometries={box:()=>new THREE.BoxGeometry(.35,.35,.35),sphere:()=>new THREE.SphereGeometry(.23,24,16),cylinder:()=>new THREE.CylinderGeometry(.19,.19,.45,20),capsule:()=>new THREE.CapsuleGeometry(.17,.38,6,12)};
  if(!geometries[type])return null;
  saveModelingHistory();
