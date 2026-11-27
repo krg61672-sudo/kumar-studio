@@ -19,7 +19,8 @@ main.insertBefore(left,view);main.append(inspector);
 const footer=document.createElement('section');footer.id='ksProTimeline';footer.innerHTML='<div class="ks-timeline-title"><span>◆ ANIMATION TIMELINE</span><button id="ksTimelineToggle" title="Show or hide timeline">⌄</button></div><div id="ksTimelineBody"></div>';document.body.append(footer);
 const block=document.getElementById('blockingStudio');if(block){block.open=true;document.getElementById('ksTimelineBody').append(block);}
 const nav=document.getElementById('ksWorkflowNav');if(nav)nav.hidden=true;
-const ref=document.getElementById('referenceModeling');if(ref)ref.open=true;
+const ref=document.getElementById('referenceModeling');if(ref){ref.open=true;aside.prepend(ref);}
+const libraryPanel=document.getElementById('characterWorkspace');if(libraryPanel)libraryPanel.open=false;
 const button=(label,title,action)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.setAttribute('aria-label',title);b.onclick=action;return b;};
 const tools=[['↖','Select',()=>document.getElementById('refBlocks')?.focus()],['✥','Move',()=>document.getElementById('ref_px')?.scrollIntoView({block:'center'})],['⟳','Rotate',()=>document.getElementById('ref_ry')?.scrollIntoView({block:'center'})],['⤢','Scale',()=>document.getElementById('ref_sx')?.scrollIntoView({block:'center'})],['⬡','Add mesh',()=>{const p=document.querySelector('[data-shape="box"]');p?.click();}],['◌','Sculpt / vertex edit',()=>{const p=document.getElementById('refEditOn');if(p){p.checked=!p.checked;p.dispatchEvent(new Event('change'));}}],['◈','Add sphere',()=>document.querySelector('[data-shape="sphere"]')?.click()],['◫','Add cylinder',()=>document.querySelector('[data-shape="cylinder"]')?.click()],['◐','Smooth selected mesh',()=>document.getElementById('refSmooth')?.click()],['⇄','Mirror selected mesh',()=>{const p=document.getElementById('refMirror');if(p)p.checked=!p.checked;}]];
 const toolLabels=['Select','Move','Rotate','Scale','Mesh','Edit','Sphere','Cylinder','Smooth','Mirror'];
@@ -32,8 +33,9 @@ function choose(name){
  const navBtn=[...(nav?.querySelectorAll('button')||[])].find(b=>b.textContent.trim()===target);
  navBtn?.click();
  const char=name==='Character'||name==='Modeling'||name==='Sculpt';
- if(ref)ref.hidden=!char;
- if(name==='Modeling'&&ref)ref.open=true;
+ if(ref){ref.hidden=!char;if(name==='Modeling'){ref.open=true;aside.prepend(ref);}}
+ if(libraryPanel){libraryPanel.hidden=name!=='Character';libraryPanel.open=false;}
+ if(name==='Modeling'&&!ref){document.getElementById('ksInspectorTitle').textContent='MODELING TOOLS UNAVAILABLE';}
  const modelingOnly=name==='Modeling';
  left.hidden=!modelingOnly&&!['Sculpt','Character'].includes(name);
  document.getElementById('ksInspectorTitle').textContent=name.toUpperCase()+' PROPERTIES';
@@ -79,6 +81,9 @@ body.ks-pro main>section#ksInspector>aside{width:100%!important;max-width:none!i
 #ksInspector aside button:hover{background:#465163}
 #ksInspector aside input[type=range]{accent-color:#dca34b}
 #ksWorkflowNav{display:none!important}
+body.ks-pro #ksTouchToolbar,body.ks-pro #ksTouchHint{display:none!important}
+body.ks-pro #referenceModeling{order:-100!important}
+body.ks-pro #characterWorkspace[hidden]{display:none!important}
 #ksProTimeline{flex:0 0 92px;min-height:0;background:#1b1e25;border-top:1px solid #3a4049;padding:4px 12px;overflow:auto}
 #ksProTimeline.collapsed{flex-basis:28px}
 .ks-timeline-title{display:flex;justify-content:space-between;align-items:center;color:#e1b16a;font-size:11px;letter-spacing:.08em;height:24px}
