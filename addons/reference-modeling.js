@@ -6,6 +6,11 @@ const panel=document.createElement('details');panel.id='referenceModeling';panel
 panel.innerHTML=`<summary>REFERENCE IMAGE & SHAPE MODELING</summary>
 <p>Use a local reference photo to guide manual 3D blockout. The photo stays in your browser.</p>
 <label>Upload reference image <input id="refFile" type="file" accept="image/png,image/jpeg,image/webp"></label>
+<label>Reference view <select id="refViewSlot"><option value="front">Front</option><option value="side">Side</option><option value="back">Back</option></select></label>
+<label>Front image <input id="refFrontFile" type="file" accept="image/png,image/jpeg,image/webp"></label>
+<label>Side image <input id="refSideFile" type="file" accept="image/png,image/jpeg,image/webp"></label>
+<label>Back image <input id="refBackFile" type="file" accept="image/png,image/jpeg,image/webp"></label>
+<p>Switch reference views here and match the Studio camera using Front / Side / Back viewport buttons. Images remain on this device.</p>
 <label><input id="refVisible" type="checkbox" checked> Show reference</label>
 <label>Reference image overlay <select id="refImageBlend"><option value="normal">Normal</option><option value="multiply">Multiply</option><option value="screen">Screen</option><option value="difference">Difference</option></select></label><label>Image opacity <input id="refOpacity" type="range" min="5" max="100" value="45"></label>
 <label>Image size <input id="refSize" type="range" min="20" max="150" value="80"></label>
@@ -32,11 +37,29 @@ const css=document.createElement('style');css.textContent=`
 if(nav){const tabs=[...nav.querySelectorAll('button')],character=tabs.find(b=>b.textContent.trim()==='Character');if(character){const sync=()=>{const active=character.classList.contains('active');panel.hidden=!active;if(active&&panel.open!==true)panel.open=true;};tabs.forEach(b=>b.addEventListener('click',()=>queueMicrotask(sync)));sync();}}
 const overlay=document.createElement('img');overlay.id='refImageOverlay';overlay.alt='Uploaded reference image';overlay.hidden=true;view.appendChild(overlay);
 let url=null,selected=-1;
+const refSlots={front:null,side:null,back:null};
+function setReferenceSlot(slot){
+ const next=refSlots[slot]||null;url=next;
+ if(next)overlay.src=next;else overlay.removeAttribute('src');
+ imageStyle();
+}
+$('refViewSlot').onchange=()=>{setReferenceSlot($('refViewSlot').value);captureScaleBaseline();};
+for(const slot of ['front','side','back']){
+ $('ref'+slot[0].toUpperCase()+slot.slice(1)+'File').onchange=e=>{
+  const file=e.target.files?.[0];if(!file)return;
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>12000000){say('Use JPG, PNG or WebP under 12 MB.');return;}
+  if(refSlots[slot])URL.revokeObjectURL(refSlots[slot]);
+  refSlots[slot]=URL.createObjectURL(file);
+  $('refViewSlot').value=slot;setReferenceSlot(slot);captureScaleBaseline();
+  say(slot+' reference loaded locally. Match the corresponding camera view.');
+ };
+}
+
 const say=s=>$('refStatus').textContent=s;
 function imageStyle(){overlay.style.opacity=String(Number($('refOpacity').value)/100);overlay.style.mixBlendMode=$('refImageBlend').value;overlay.style.width=$('refSize').value+'%';overlay.style.left=(50+Number($('refX').value)/2)+'%';overlay.style.top=(50+Number($('refY').value)/2)+'%';overlay.hidden=!url||!$('refVisible').checked;}
 for(const id of ['refVisible','refOpacity','refSize','refX','refY','refImageBlend'])$(id).addEventListener('input',imageStyle);
-$('refFile').onchange=e=>{const file=e.target.files?.[0];if(!file)return;if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>12000000){say('Use JPG, PNG or WebP under 12 MB.');return;}if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(file);overlay.src=url;imageStyle();captureScaleBaseline();say('Reference loaded locally. Align shapes in the 3D viewport.');};
-$('refClear').onclick=()=>{if(url)URL.revokeObjectURL(url);url=null;overlay.removeAttribute('src');imageStyle();captureScaleBaseline();$('refFile').value='';say('Reference image removed.');};
+$('refFile').onchange=e=>{const file=e.target.files?.[0];if(!file)return;const slot=$('refViewSlot').value;if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>12000000){say('Use JPG, PNG or WebP under 12 MB.');return;}if(refSlots[slot])URL.revokeObjectURL(refSlots[slot]);refSlots[slot]=URL.createObjectURL(file);setReferenceSlot(slot);captureScaleBaseline();say(slot+' reference loaded.');};
+$('refClear').onclick=()=>{const slot=$('refViewSlot').value;if(refSlots[slot])URL.revokeObjectURL(refSlots[slot]);refSlots[slot]=null;setReferenceSlot(slot);captureScaleBaseline();$('refFile').value='';$('ref'+slot[0].toUpperCase()+slot.slice(1)+'File').value='';say(slot+' reference removed.');};
 // Independent and grouped scaling with a stable baseline to avoid cumulative drift.
 let scaleBaseline=null;
 const scaleTarget=$('refScaleTarget'),scaleSlider=$('refScaleSlider'),scaleLabel=$('refScaleLabel');
