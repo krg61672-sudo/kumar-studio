@@ -170,8 +170,8 @@ function applyStroke(e){
  const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;
  if(Math.abs(dx)+Math.abs(dy)<.1)return;
  const mode=$('refBrushMode').value;
- const radius=Number($('refBrushRadius').value)/100*.8+.025;
- const strength=Number($('refBrushStrength').value)/100;
+ const radius=Number($('refBrushRadius').value)/100*.9+.04;
+ const strength=Number($('refBrushStrength').value)/100*1.8;
  let delta;
  if(mode==='grab')delta=edit.screenDeltaToLocal(dx,dy,gesture.world);
  else {
@@ -182,11 +182,12 @@ function applyStroke(e){
  }
  if(edit.brushMove(gesture.center,delta,radius,strength,$('refMirror').checked)){
   gesture.x=e.clientX;gesture.y=e.clientY;
-  gesture.world=edit.active().localToWorld(new THREE.Vector3(...gesture.center)).toArray();
+  // Three.js is module-scoped in the main studio, so this addon must not use a global THREE.
+  // Keep the original hit point for stable camera-plane drag conversion.
  }
 }
 canvas.addEventListener('pointerdown',e=>{
- if(!$('refEditOn').checked||e.button!==0||!edit.active()||!e.isPrimary)return;
+ if(!$('refEditOn').checked||(e.pointerType==='mouse'&&e.button!==0)||!edit.active()||!e.isPrimary)return;
  const hit=edit.brushAt(e.clientX,e.clientY);if(!hit)return;
  e.preventDefault();e.stopImmediatePropagation();
  const mesh=edit.active();
