@@ -12,6 +12,16 @@ section.innerHTML=`<h4>AI Image → 3D Model</h4>
 <p id="ksAIStatus" aria-live="polite">Connect an AI backend to enable generation. Never paste a secret API key here.</p>
 <hr><label>Already have a generated 3D model? Import GLB <input id="ksAIGLB" type="file" accept=".glb,model/gltf-binary"></label>
 <p>Imported GLB mesh parts become selectable shapes in Modeling. Use Freehand Sculpt for detail edits. Rigging and automatic retopology are not included.</p>`;
+const free=document.createElement('section');
+free.id='ksFreeAI3D';
+free.innerHTML=`<h4>Free AI Generation · No API Key</h4>
+<p>Use the free TripoSR image-to-3D demo to generate a GLB, then import it below for manual sculpting. Free GPU access may have queues and daily limits.</p>
+<button id="ksOpenFree3D" type="button">1 · Open Free AI Generator</button>
+<p>2 · Upload your reference photo in the generator. Generate and download the resulting GLB file.</p>
+<p>3 · Return here and use “Import GLB” below to edit the mesh in Kumar Studio.</p>
+<p><small>Free AI runs on Hugging Face, not on your device. This is an external workflow; automatic direct generation requires a deployed backend.</small></p>`;
+section.prepend(free);
+free.querySelector('#ksOpenFree3D').onclick=()=>window.open('https://huggingface.co/spaces/stabilityai/TripoSR','_blank','noopener,noreferrer');
 const heading=[...panel.querySelectorAll('h4')].find(x=>x.textContent.includes('3D Blockout Shapes'));
 if(heading)heading.before(section);else panel.append(section);
 const $=id=>document.getElementById(id),status=msg=>$('ksAIStatus').textContent=msg;
