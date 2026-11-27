@@ -17,6 +17,8 @@ panel.innerHTML=`<summary>MANUAL ANIMATION BLOCKING</summary>
 <label>Import Blocking JSON <input id="blkImport" type="file" accept=".json,application/json"></label>
 <p id="blkStatus" aria-live="polite">Build the skeleton first. Save key poses at different frames.</p>`;
 const aside=document.querySelector('main>aside');const nav=$('ksWorkflowNav');if(nav)nav.after(panel);else aside.prepend(panel);
+// Keep blocking tools inside the Rig & Pose workspace, not visible on every tab.
+if(nav){const tabs=[...nav.querySelectorAll('button')];const rigTab=tabs.find(b=>b.textContent.trim()==='Rig & Pose');if(rigTab){const sync=()=>{panel.hidden=!rigTab.classList.contains('active');};tabs.forEach(b=>b.addEventListener('click',()=>queueMicrotask(sync)));sync();}}
 const style=document.createElement('style');style.textContent=`
 #blockingStudio .blkRow{display:flex;gap:6px;align-items:end}#blockingStudio .blkRow>*{flex:1;min-width:0}
 #blockingStudio .blkRow label{font-size:12px}#blockingStudio .blkKeys{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
