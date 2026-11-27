@@ -5,7 +5,7 @@ const fields=['gender','height','width','depth','skin','roughness','bodyAnatomyE
 const key='kumar-studio-character-library-v1';
 const host=document.querySelector('aside');
 if(!host||$('characterWorkspace'))return;
-const panel=document.createElement('details');panel.id='characterWorkspace';panel.open=true;
+const panel=document.createElement('details');panel.id='characterWorkspace';panel.open=false;
 panel.innerHTML=`<summary>CHARACTER BUILDING WORKSPACE</summary>
 <p>Build and save named character designs. Sculpting and skeleton tools remain available below.</p>
 <label>Character name</label><input id="cbName" type="text" maxlength="80" placeholder="Character 01">
@@ -58,7 +58,9 @@ try{sessionStorage.setItem('ks-workspace-tab',group.name);}catch(e){}
 }
 for(const g of groups){if(!g.items.length)continue;const b=document.createElement('button');b.type='button';b.className='ksNavButton';b.textContent=g.name;b.onclick=()=>select(g);buttons.set(g,b);nav.appendChild(b);}
 const title=sidebar.querySelector('h3');if(title)title.textContent='Character & Animation Tools';
-sidebar.insertBefore(nav,title||sidebar.firstChild);
+sidebar.insertBefore(nav,sidebar.firstChild);
+const library=document.getElementById('characterWorkspace');if(library){library.open=false;nav.after(library);}
+
 const css=document.createElement('style');css.textContent=`
 main>aside{width:340px;max-width:48vw;background:#111d30;border-right:1px solid #33445d}
 main>aside details{background:#1a2a40;border:1px solid #344860;border-radius:10px;padding:0 12px 10px;margin:10px 0}
