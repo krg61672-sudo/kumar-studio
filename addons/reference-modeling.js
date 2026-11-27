@@ -16,7 +16,7 @@ panel.innerHTML=`<summary>REFERENCE IMAGE & SHAPE MODELING</summary>
 <div class="refButtons"><button data-shape="box" type="button">+ Box</button><button data-shape="sphere" type="button">+ Sphere</button><button data-shape="cylinder" type="button">+ Cylinder</button><button data-shape="capsule" type="button">+ Capsule</button></div>
 <label>Selected block <select id="refBlocks"><option value="">Choose block</option></select></label>
 <div id="refTransform"></div>
-<button id="refRemove" type="button">Delete Selected Block</button>
+<section id="refDeformSection"><h4>Shape Stretch & Sculpt</h4><p>Turn a sphere into a head, torso or limb. Select a shape first; adjustments affect only that shape.</p><label>Stretch Width (X) <output id="refOutWidth">100%</output><input id="refStretchWidth" type="range" min="20" max="350" value="100"></label><label>Stretch Height (Y) <output id="refOutHeight">100%</output><input id="refStretchHeight" type="range" min="20" max="350" value="100"></label><label>Stretch Depth (Z) <output id="refOutDepth">100%</output><input id="refStretchDepth" type="range" min="20" max="350" value="100"></label><label>Top / Bottom Taper <output id="refOutTaper">0</output><input id="refTaper" type="range" min="-80" max="80" value="0"></label><label>Middle Bulge / Pinch <output id="refOutBulge">0</output><input id="refBulge" type="range" min="-80" max="80" value="0"></label><div class="refButtons"><button id="refHeadPreset" type="button">Head Shape</button><button id="refTorsoPreset" type="button">Torso Shape</button><button id="refLimbPreset" type="button">Limb Shape</button><button id="refDeformReset" type="button">Reset Shape</button></div><p id="refDeformStatus" aria-live="polite">Select a block to start shaping.</p></section><button id="refRemove" type="button">Delete Selected Block</button>
 <button id="refExport" type="button">Export Blockout JSON</button>
 <p id="refStatus" aria-live="polite">Start with a reference image and simple shapes. This is manual blockout, not automatic image-to-3D conversion.</p>`;
 const nav=$('ksWorkflowNav');if(nav)nav.after(panel);else aside.prepend(panel);
@@ -76,9 +76,46 @@ const controls=[['Position X','px',-3,3,.01,0],['Position Y','py',-1,4,.01,1],['
 const host=$('refTransform');for(const [label,id,min,max,step,value] of controls){const l=document.createElement('label');l.textContent=label+' ';const out=document.createElement('span');out.id='refVal_'+id;out.textContent=value;l.append(out);const input=document.createElement('input');input.id='ref_'+id;input.type='range';input.min=min;input.max=max;input.step=step;input.value=value;input.oninput=()=>{out.textContent=input.value;applyTransform();};host.append(l,input);}
 function applyTransform(){if(selected<0)return;bridge.transform({position:{x:Number($('ref_px').value),y:Number($('ref_py').value),z:Number($('ref_pz').value)},scale:{x:Number($('ref_sx').value),y:Number($('ref_sy').value),z:Number($('ref_sz').value)},rotation:{y:Number($('ref_ry').value)*Math.PI/180}});}
 function refresh(){const list=bridge.list(),sel=$('refBlocks');sel.replaceChildren(new Option('Choose block',''));list.forEach((b,i)=>sel.add(new Option((i+1)+'. '+b.type,i)));if(selected>=0&&selected<list.length){sel.value=String(selected);bridge.select(selected);const b=list[selected];const vals={px:b.position[0],py:b.position[1],pz:b.position[2],sx:b.scale[0],sy:b.scale[1],sz:b.scale[2],ry:b.rotation[1]*180/Math.PI};for(const [id,val] of Object.entries(vals)){const el=$('ref_'+id);el.value=String(val);$('refVal_'+id).textContent=Number(val).toFixed(2);}}else{selected=-1;sel.value='';}}
-panel.querySelectorAll('[data-shape]').forEach(b=>b.onclick=()=>{bridge.add(b.dataset.shape);selected=bridge.list().length-1;refresh();captureScaleBaseline();say('3D '+b.dataset.shape+' added. Adjust its position, size and rotation.');});
-$('refBlocks').onchange=e=>{selected=e.target.value===''?-1:Number(e.target.value);refresh();captureScaleBaseline();};
+panel.querySelectorAll('[data-shape]').forEach(b=>b.onclick=()=>{bridge.add(b.dataset.shape);selected=bridge.list().length-1;refresh();captureScaleBaseline();setDeform();say('3D '+b.dataset.shape+' added. Adjust its position, size and rotation.');});
+$('refBlocks').onchange=e=>{selected=e.target.value===''?-1:Number(e.target.value);refresh();captureScaleBaseline();deformIds.forEach((id,i)=>{$(id).value=String([100,100,100,0,0][i]);});};
 $('refRemove').onclick=()=>{if(selected<0)return;bridge.select(selected);bridge.remove();selected=-1;refresh();captureScaleBaseline();say('Selected shape deleted.');};
+
+
+// Non-destructive local geometry deformation on a selected primitive.
+// The original vertex coordinates are retained so moving sliders does not compound distortions.
+const deformCache=new WeakMap();
+const deformIds=['refStretchWidth','refStretchHeight','refStretchDepth','refTaper','refBulge'];
+function deformBlock(){
+ const obj=bridge.edit.active();
+ if(!obj){$('refDeformStatus').textContent='Choose a block first.';return;}
+ const geometry=obj.geometry,attr=geometry.attributes.position;
+ if(!attr)return;
+ let baseline=deformCache.get(obj);
+ if(!baseline||baseline.geometry!==geometry){baseline={geometry,coords:Float32Array.from(attr.array),count:attr.count};deformCache.set(obj,baseline);}
+ const w=Number($('refStretchWidth').value)/100,h=Number($('refStretchHeight').value)/100,d=Number($('refStretchDepth').value)/100;
+ const taper=Number($('refTaper').value)/100,bulge=Number($('refBulge').value)/100;
+ let minY=Infinity,maxY=-Infinity;
+ for(let i=0;i<baseline.count;i++){const y=baseline.coords[i*3+1];minY=Math.min(minY,y);maxY=Math.max(maxY,y);}
+ const span=Math.max(.0001,maxY-minY);
+ for(let i=0;i<baseline.count;i++){
+  const j=i*3,y=baseline.coords[j+1],t=(y-minY)/span;
+  const profile=Math.max(.1,1+taper*(2*t-1)+bulge*4*t*(1-t));
+  attr.setXYZ(i,baseline.coords[j]*w*profile,y*h,baseline.coords[j+2]*d*profile);
+ }
+ attr.needsUpdate=true;geometry.computeVertexNormals();geometry.computeBoundingSphere();geometry.computeBoundingBox();
+ for(const [id,out] of [['refStretchWidth','refOutWidth'],['refStretchHeight','refOutHeight'],['refStretchDepth','refOutDepth'],['refTaper','refOutTaper'],['refBulge','refOutBulge']])$(out).textContent=$(id).value+(id.startsWith('refStretch')?'%':'');
+ $('refDeformStatus').textContent='Shape reshaped. Use touch Mesh Edit for finer adjustments.';
+}
+function setDeform(values){
+ const defaults=[100,100,100,0,0];
+ deformIds.forEach((id,i)=>{$(id).value=String(values?.[i]??defaults[i]);});
+ deformBlock();
+}
+deformIds.forEach(id=>$(id).addEventListener('input',deformBlock));
+$('refHeadPreset').onclick=()=>setDeform([90,115,85,-18,15]);
+$('refTorsoPreset').onclick=()=>setDeform([135,185,85,-24,35]);
+$('refLimbPreset').onclick=()=>setDeform([65,250,65,8,0]);
+$('refDeformReset').onclick=()=>setDeform();
 
 // Finger-first vertex editing: select a point by tapping a mesh and drag it in camera plane.
 const meshEdit=document.createElement('section');meshEdit.id='refMeshEdit';
