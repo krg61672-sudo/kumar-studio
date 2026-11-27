@@ -3644,9 +3644,13 @@ window.KumarModelingBridge={
 // Editable reference block primitives, independent from the skinned character rig.
 const referenceShapeGroup=new THREE.Group();scene.add(referenceShapeGroup);
 let activeModelingBlock=null;
+const modelingUndo=[],modelingRedo=[];
+function saveModelingHistory(){const state=referenceShapeGroup.children.map(m=>({geometry:m.geometry.clone(),material:m.material.clone(),position:m.position.clone(),scale:m.scale.clone(),rotation:m.rotation.clone(),visible:m.visible,userData:{...m.userData}}));modelingUndo.push(state);if(modelingUndo.length>30)modelingUndo.shift();modelingRedo.length=0;}
+function restoreModelingHistory(state){for(const m of [...referenceShapeGroup.children]){referenceShapeGroup.remove(m);m.geometry.dispose();m.material.dispose();}for(const b of state){const m=new THREE.Mesh(b.geometry.clone(),b.material.clone());m.position.copy(b.position);m.scale.copy(b.scale);m.rotation.copy(b.rotation);m.visible=b.visible;m.userData={...b.userData};referenceShapeGroup.add(m);}activeModelingBlock=referenceShapeGroup.children.at(-1)||null;}
 window.KumarShapeBridge={
  add(type){const geometries={box:()=>new THREE.BoxGeometry(.35,.35,.35),sphere:()=>new THREE.SphereGeometry(.23,24,16),cylinder:()=>new THREE.CylinderGeometry(.19,.19,.45,20),capsule:()=>new THREE.CapsuleGeometry(.17,.38,6,12)};
  if(!geometries[type])return null;
+ saveModelingHistory();
  const obj=new THREE.Mesh(geometries[type](),new THREE.MeshStandardMaterial({color:0x7fa9dd,roughness:.75,transparent:true,opacity:1,depthWrite:true}));
  obj.position.set(0,1,0);obj.castShadow=true;obj.receiveShadow=true;referenceShapeGroup.add(obj);activeModelingBlock=obj;return referenceShapeGroup.children.length;},
  select(i){activeModelingBlock=referenceShapeGroup.children[i]||null;return !!activeModelingBlock;},
@@ -3669,7 +3673,9 @@ window.KumarShapeBridge={
  for(const [axis,value] of Object.entries(data.scale||{}))if('xyz'.includes(axis)&&Number.isFinite(value))activeModelingBlock.scale[axis]=Math.max(.05,value);
  for(const [axis,value] of Object.entries(data.rotation||{}))if('xyz'.includes(axis)&&Number.isFinite(value))activeModelingBlock.rotation[axis]=value;
  return true;},
- remove(){if(!activeModelingBlock)return false;referenceShapeGroup.remove(activeModelingBlock);activeModelingBlock.geometry.dispose();activeModelingBlock.material.dispose();activeModelingBlock=null;return true;},
+ remove(){if(!activeModelingBlock)return false;saveModelingHistory();referenceShapeGroup.remove(activeModelingBlock);activeModelingBlock.geometry.dispose();activeModelingBlock.material.dispose();activeModelingBlock=null;return true;},
+ undo(){if(!modelingUndo.length)return false;const current=referenceShapeGroup.children.map(m=>({geometry:m.geometry.clone(),material:m.material.clone(),position:m.position.clone(),scale:m.scale.clone(),rotation:m.rotation.clone(),visible:m.visible,userData:{...m.userData}}));modelingRedo.push(current);restoreModelingHistory(modelingUndo.pop());return true;},
+ redo(){if(!modelingRedo.length)return false;const current=referenceShapeGroup.children.map(m=>({geometry:m.geometry.clone(),material:m.material.clone(),position:m.position.clone(),scale:m.scale.clone(),rotation:m.rotation.clone(),visible:m.visible,userData:{...m.userData}}));modelingUndo.push(current);restoreModelingHistory(modelingRedo.pop());return true;},
  list(){return referenceShapeGroup.children.map((m,i)=>({index:i,type:m.geometry.type,visible:m.visible,opacity:m.userData.requestedOpacity??1,displayMode:m.userData.displayMode||'solid',position:m.position.toArray(),scale:m.scale.toArray(),rotation:[m.rotation.x,m.rotation.y,m.rotation.z]}));},
  clear(){for(const m of [...referenceShapeGroup.children]){referenceShapeGroup.remove(m);m.geometry.dispose();m.material.dispose();}activeModelingBlock=null;},
  edit:{
