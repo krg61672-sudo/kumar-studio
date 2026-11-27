@@ -42,7 +42,7 @@ const label=d=>(d.querySelector(':scope > summary')?.textContent||'').trim().toL
 const sections=[
 {name:'Character',match:d=>d.id==='characterWorkspace'||/character preset|body dimensions|body & face sculpting|skin studio|body anatomy/.test(label(d))},
 {name:'Rig & Pose',match:d=>/manual pose|skeleton|rigging|hand|finger|pose/.test(label(d))},
-{name:'Scene & Camera',match:d=>/camera studio|pre-production|scene|shot/.test(label(d))},
+{name:'Scene & Camera',match:d=>/camera studio|camera & lighting|pre-production|scene|shot/.test(label(d))},
 {name:'Files & Export',match:d=>/import & export|export|blender/.test(label(d))}
 ];
 const groups=sections.map(x=>({name:x.name,items:[]}));
