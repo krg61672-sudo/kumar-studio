@@ -24,3 +24,18 @@ A single 600-second scene timeline with connected environments and persistent Dh
 
 ## Release gate
 Call the studio **complete** only after all required tests pass on the actual rig, in the browser, and the exported media is independently checked.
+
+## Mandatory Blender integration (user requirement)
+- Keep the browser Studio fully functional while adding Python/Blender processing.
+- Support MakeHuman 163-bone rigs and preserve hand/finger articulation and weapon grips.
+- Export character and motion as GLB/BVH; retarget to Blender rigs, process with IK and anatomical limits, re-import animated GLB for preview.
+- Verify actual Blender processing and return round-trip on a real rig; do not treat bridge UI or syntax-only tests as complete.
+
+## Mandatory blocking system (user requirement)
+- **Character blockout:** create original characters from editable primitives/blocking shapes, refine into production models.
+- **Scene blocking:** place actors, props, sets, cameras; persist positions through the entire scene.
+- **Combat blocking:** arrange contact, anticipation, impact, dodge, reactions, recovery and safe spacing.
+- **Pose/action library:** editable natural standing, walking, running, sitting, speaking and fighting poses.
+- **Animation authoring:** manual and automatic keyframing, editable timeline, action sequencer, interpolation, transition blending, IK, mocap, audio/dialogue synchronization.
+- **Review controls:** preview/apply/reject, undo/redo and reliable saved projects.
+- Blocked performances must remain editable and transfer to the final rig without replacing the character identity or resetting scene coordinates.
