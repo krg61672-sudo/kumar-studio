@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="hi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ANANTDHARA | Academy Scene</title>
+<style>body{margin:0;background:#090e18;color:#f4e8d0;font:14px system-ui}header{padding:12px 16px;background:#182238;display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}h1{font-size:18px;margin:0}#stage{height:67dvh;min-height:350px;position:relative}canvas{display:block}#hud{position:absolute;top:12px;left:12px;background:#101725bb;padding:10px;border-radius:8px;max-width:70%}#dialogue{font-size:19px;margin-top:7px;color:white}footer{padding:12px 16px;background:#182238}button,input,select{accent-color:#d6a34d}button,select{background:#28374d;color:white;border:1px solid #667083;border-radius:6px;padding:9px;margin-right:6px}input[type=range]{width:min(100%,520px)}.note{color:#b7c3d6;font-size:12px}.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script></head>
+<body><header><h1>ANANTDHARA · Academy | Continuous 3D Previsualization</h1><div><a href="./studio-v5.0.html" style="color:#edc47c">← Main Studio</a></div></header>
+<div id="stage"><div id="hud"><strong id="chapter">Loading scene…</strong><div id="dialogue"></div><small id="clock"></small></div></div>
+<footer><div class="controls"><button id="play">▶ Play</button><button id="restart">↺ Restart</button><label>Camera <select id="camera"><option value="auto">Cinematic auto</option><option value="wide">Wide</option><option value="follow">Follow Dhruv</option></select></label><label>Speed <select id="speed"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option></select></label><strong id="time">00:00 / 10:00</strong></div><input id="scrub" type="range" min="0" max="600" step=".1" value="0"><div class="note">Prototype: one continuous 600-second 3D timeline with staged character motion and camera choreography. Dialogue is displayed, not voiced. Characters are temporary procedural stand-ins; final rigged GLB animation, lip-sync and sound are not yet implemented.</div></footer>
+<script type="module">
+import * as THREE from 'three';
+const host=document.getElementById('stage'),scene=new THREE.Scene();scene.background=new THREE.Color('#a4b7c2');scene.fog=new THREE.Fog('#a4b7c2',35,90);
+const camera=new THREE.PerspectiveCamera(48,1,.1,180),renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.outputColorSpace=THREE.SRGBColorSpace;host.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xe8e1cf,0x63715c,2));const sun=new THREE.DirectionalLight(0xffe0a2,3);sun.position.set(-12,22,10);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-35;sun.shadow.camera.right=35;sun.shadow.camera.top=35;sun.shadow.camera.bottom=-35;scene.add(sun);
+function mat(c,metal=0){return new THREE.MeshStandardMaterial({color:c,roughness:.78,metalness:metal})}
+const stone=mat('#b99c75'),trim=mat('#d6bb89'),floor=mat('#bba783'),dark=mat('#4c3932'),gold=mat('#d9b458',.35);
+function box(w,h,d,m,x,y,z,parent=scene){const a=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);a.position.set(x,y,z);a.castShadow=true;a.receiveShadow=true;parent.add(a);return a}
+function cyl(r1,r2,h,m,x,y,z,parent=scene){const a=new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,h,12),m);a.position.set(x,y,z);a.castShadow=true;a.receiveShadow=true;parent.add(a);return a}
+box(90,.25,80,floor,0,-.2,0);box(25,1.4,14,stone,0,.6,-17);box(27,.5,15,trim,0,1.5,-17);
+for(let i=-3;i<=3;i++){const x=i*3.5;cyl(.48,.6,7,stone,x,5,-23);cyl(.7,.7,.35,trim,x,8.6,-23);box(2.2,.35,2.2,trim,x,1.4,-23)}
+box(28,1,7,stone,0,9,-23);box(30,1.8,8,dark,0,10.2,-23);
+for(let side of [-1,1]){for(let j=0;j<5;j++){cyl(.5,.65,5,stone,side*17,2.5,-15+j*7);cyl(.7,.7,.3,trim,side*17,5.1,-15+j*7)}}
+box(6,.6,6,stone,0,.3,-7);const crystal=new THREE.Mesh(new THREE.IcosahedronGeometry(1.1,1),new THREE.MeshStandardMaterial({color:0x7bd6ff,emissive:0x1a5c8a,emissiveIntensity:.5,transparent:true,opacity:.82}));crystal.position.set(0,2,-7);scene.add(crystal);const aura=new THREE.PointLight(0x54c7ff,0,10);aura.position.copy(crystal.position);scene.add(aura);
+function person(name,color,x,z){const root=new THREE.Group();scene.add(root);root.position.set(x,0,z);const skin=mat('#ba876b'),cloth=mat(color),hair=mat('#20202b');const torso=box(.8,1.1,.43,cloth,0,1.65,0,root);const neck=cyl(.14,.15,.18,skin,0,2.28,0,root);const head=new THREE.Mesh(new THREE.SphereGeometry(.31,16,12),skin);head.position.set(0,2.63,0);root.add(head);const cap=new THREE.Mesh(new THREE.SphereGeometry(.32,16,12,0,Math.PI*2,0,Math.PI*.43),hair);cap.position.set(0,2.69,0);root.add(cap);
+const arms=[],legs=[];for(const s of [-1,1]){const a=new THREE.Group();a.position.set(s*.51,2.08,0);root.add(a);box(.24,.82,.25,cloth,0,-.41,0,a);cyl(.12,.12,.22,skin,0,-.89,0,a);arms.push(a);const l=new THREE.Group();l.position.set(s*.23,1.12,0);root.add(l);box(.29,1.02,.32,dark,0,-.51,0,l);box(.33,.15,.52,dark,0,-1.05,.12,l);legs.push(l)}
+return {name,root,arms,legs,head,base:[x,z]}}
+const dhruv=person('Dhruv','#3b5677',-8,7),ran=person('Ranvijay','#9b3d3d',7,5),examiner=person('Examiner','#d8c39c',2,-8),father=person('Mahendra','#76654c',-11,8),brother=person('Devansh','#52755a',-10,8),crowd=[];
+for(let i=0;i<24;i++){const s=i%2?-1:1;crowd.push(person('Student',i%3===0?'#a28a6d':i%3===1?'#60766c':'#7e758b',s*(5+Math.floor(i/2)%4*2),-1+Math.floor(i/8)*5))}
+const beats=[
+[0,'Academy Arrival','ध्रुव, याद रखना, परीक्षा में असफल होना जीवन में असफल होना नहीं है।','Mahendra'],
+[32,'Academy Arrival','पिताजी, इस बार मैं पूरी कोशिश करूँगा।','Dhruv'],
+[70,'Applicants Courtyard','सुना है, इस वर्ष परीक्षा पहले से कठिन होगी।','Student'],
+[112,'Ranvijay Enters','यहाँ कितने लोग ऐसे हैं जो केवल सपना देखने आए हैं?','Ranvijay'],
+[154,'First Confrontation','तो आज परीक्षा में कुछ मनोरंजन भी होगा।','Ranvijay'],
+[205,'Soul Awakening Test','सभी अभ्यर्थी ध्यान दें! आत्मिक शक्ति का परीक्षण शुरू होगा।','Examiner'],
+[280,'Ranvijay Test','रणविजय — उत्तीर्ण!','Examiner'],
+[340,'Dhruv Test','अगला अभ्यर्थी—ध्रुव, वीरगढ़!','Examiner'],
+[389,'Dhruv Test','पर्याप्त आत्मिक शक्ति नहीं है। ध्रुव... अनुत्तीर्ण।','Examiner'],
+[450,'Humiliation','अरे! वीरगढ़ के महान साधक! परीक्षा कैसी रही?','Ranvijay'],
+[478,'Humiliation','रास्ता छोड़ो।','Dhruv'],
+[500,'Humiliation','तुम्हारे पिता प्रांत के प्रमुख हैं... लेकिन उनका बेटा साधक भी नहीं बन सकता।','Ranvijay'],
+[525,'Confrontation','मेरे पिता के बारे में एक शब्द और मत कहना।','Dhruv'],
+[552,'Punch and Reaction','मेरी कमज़ोरी का मज़ाक उड़ाना है, उड़ाओ। लेकिन मेरे परिवार का अपमान मत करना।','Dhruv'],
+[575,'Revenge','इसका पीछा करो।','Ranvijay']];
+const lerp=(a,b,t)=>a+(b-a)*Math.max(0,Math.min(1,t)),ease=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t)},between=(t,a,b)=>ease((t-a)/(b-a));
+function move(p,x,z,t,walk=true){const old=p.root.position.clone();p.root.position.set(x,0,z);const stride=walk?Math.min(1,Math.hypot(old.x-x,old.z-z)*30):0;p.legs.forEach((l,i)=>l.rotation.x=Math.sin(t*9+i*Math.PI)*.38*stride);p.arms.forEach((a,i)=>a.rotation.x=-Math.sin(t*9+i*Math.PI)*.24*stride)}
+function pose(t){const a=between(t,0,60),b=between(t,330,365),c=between(t,425,450),d=between(t,560,566);
+move(dhruv,lerp(-12,-3,a)+lerp(0,3,b)+lerp(0,4,c)+lerp(0,-2,between(t,570,600)),lerp(12,-4,a)+lerp(0,-2,b)+lerp(0,12,c),t);
+move(ran,lerp(11,6,between(t,110,150))+lerp(0,-3,between(t,450,480)),lerp(7,2,between(t,110,150))+lerp(0,9,between(t,450,480)),t);
+move(father,-12+lerp(0,3,between(t,0,40)),11, t);move(brother,-10+lerp(0,3,between(t,0,40)),10,t);
+dhruv.root.rotation.y=t<450?0:Math.PI/2;ran.root.rotation.y=t<450?-.6:-Math.PI/2;
+dhruv.arms[1].rotation.x=t>350&&t<395?-1.2:t>555&&t<566?-1.65:dhruv.arms[1].rotation.x;
+ran.root.rotation.z=t>562&&t<580?-Math.sin(Math.PI*between(t,562,580))*.5:0;ran.root.position.y=t>565&&t<580?-.5*between(t,565,572):0;
+crystal.rotation.y=t*.3;const pulse=t>=340&&t<395?Math.sin((t-340)*.4)**2:0;aura.intensity=t>=280&&t<340?3:pulse*.7;crystal.material.emissiveIntensity=t>=280&&t<340?2.4:.3+pulse*.3;
+crowd.forEach((p,i)=>{p.root.rotation.y=Math.sin(t*.2+i)*.15;p.head.rotation.y=Math.sin(t*.3+i)*.08});
+}
+const target=new THREE.Vector3(),desired=new THREE.Vector3();
+function cameraAt(t){const mode=document.getElementById('camera').value;let x=18,y=12,z=24,tx=0,ty=2,tz=-4;
+if(t<70){x=18;y=11;z=23;tx=-5;tz=-5}
+else if(t<205){x=14;y=8;z=17;tx=2;tz=1}
+else if(t<340){x=8;y=8;z=9;tx=0;tz=-7}
+else if(t<450){x=5;y=5;z=2;tx=1;tz=-6}
+else {x=12;y=5;z=20;tx=3;tz=9}
+if(mode==='wide'){x=21;y=15;z=26;tx=0;tz=-4}
+if(mode==='follow'){x=dhruv.root.position.x+5;y=4;z=dhruv.root.position.z+8;tx=dhruv.root.position.x;tz=dhruv.root.position.z}
+desired.set(x,y,z);camera.position.lerp(desired,.055);target.lerp(new THREE.Vector3(tx,ty,tz),.07);camera.lookAt(target)}
+let t=0,playing=false,last=performance.now();const scrub=document.getElementById('scrub'),play=document.getElementById('play');
+function fmt(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.floor(s%60)).padStart(2,'0')}
+function update(){let beat=beats[0];for(const b of beats)if(t>=b[0])beat=b;document.getElementById('chapter').textContent=beat[1];document.getElementById('dialogue').textContent=beat[3]+': '+beat[2];document.getElementById('clock').textContent='Continuous master timeline';document.getElementById('time').textContent=fmt(t)+' / 10:00';scrub.value=t;play.textContent=playing?'⏸ Pause':'▶ Play'}
+play.onclick=()=>{playing=!playing;update()};document.getElementById('restart').onclick=()=>{t=0;playing=false;update()};scrub.oninput=()=>{t=Number(scrub.value);pose(t);update()};
+function resize(){const w=host.clientWidth,h=host.clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix()}new ResizeObserver(resize).observe(host);resize();
+function tick(now){const dt=Math.min(.05,(now-last)/1000);last=now;if(playing){t=Math.min(600,t+dt*Number(document.getElementById('speed').value));if(t>=600)playing=false}pose(t);cameraAt(t);renderer.render(scene,camera);update();requestAnimationFrame(tick)}requestAnimationFrame(tick);
+</script></body></html>
