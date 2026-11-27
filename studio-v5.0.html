@@ -3651,13 +3651,26 @@ window.KumarShapeBridge={
  obj.position.set(0,1,0);obj.castShadow=true;obj.receiveShadow=true;referenceShapeGroup.add(obj);activeModelingBlock=obj;return referenceShapeGroup.children.length;},
  select(i){activeModelingBlock=referenceShapeGroup.children[i]||null;return !!activeModelingBlock;},
  setVisible(i,visible){const m=referenceShapeGroup.children[i];if(!m)return false;m.visible=!!visible;return true;},
- setOpacity(i,opacity){const m=referenceShapeGroup.children[i];if(!m)return false;m.material.opacity=Math.max(.1,Math.min(1,Number(opacity)));m.material.transparent=m.material.opacity<1;m.material.needsUpdate=true;return true;},
+ setOpacity(i,opacity){const m=referenceShapeGroup.children[i];if(!m)return false;m.userData.requestedOpacity=Math.max(.05,Math.min(1,Number(opacity)));return this.setDisplayMode(i,m.userData.displayMode||'solid');},
+ setDisplayMode(i,mode){
+  const m=referenceShapeGroup.children[i];if(!m||!['solid','transparent','wireframe','xray','ghost'].includes(mode))return false;
+  m.userData.displayMode=mode;
+  const mat=m.material,requested=m.userData.requestedOpacity??1;
+  mat.wireframe=mode==='wireframe';
+  mat.depthTest=mode!=='xray'&&mode!=='ghost';
+  mat.depthWrite=mode==='solid'||mode==='wireframe';
+  mat.opacity=mode==='solid'||mode==='wireframe'?requested:Math.min(requested,mode==='transparent'?.55:mode==='xray'?.65:.25);
+  mat.transparent=mat.opacity<1||mode==='xray'||mode==='ghost';
+  mat.side=mode==='xray'||mode==='ghost'?THREE.DoubleSide:THREE.FrontSide;
+  m.renderOrder=mode==='xray'||mode==='ghost'?20:0;
+  mat.needsUpdate=true;return true;
+ },
  transform(data){if(!activeModelingBlock)return false;for(const [axis,value] of Object.entries(data.position||{}))if('xyz'.includes(axis)&&Number.isFinite(value))activeModelingBlock.position[axis]=value;
  for(const [axis,value] of Object.entries(data.scale||{}))if('xyz'.includes(axis)&&Number.isFinite(value))activeModelingBlock.scale[axis]=Math.max(.05,value);
  for(const [axis,value] of Object.entries(data.rotation||{}))if('xyz'.includes(axis)&&Number.isFinite(value))activeModelingBlock.rotation[axis]=value;
  return true;},
  remove(){if(!activeModelingBlock)return false;referenceShapeGroup.remove(activeModelingBlock);activeModelingBlock.geometry.dispose();activeModelingBlock.material.dispose();activeModelingBlock=null;return true;},
- list(){return referenceShapeGroup.children.map((m,i)=>({index:i,type:m.geometry.type,visible:m.visible,opacity:m.material.opacity,position:m.position.toArray(),scale:m.scale.toArray(),rotation:[m.rotation.x,m.rotation.y,m.rotation.z]}));},
+ list(){return referenceShapeGroup.children.map((m,i)=>({index:i,type:m.geometry.type,visible:m.visible,opacity:m.userData.requestedOpacity??1,displayMode:m.userData.displayMode||'solid',position:m.position.toArray(),scale:m.scale.toArray(),rotation:[m.rotation.x,m.rotation.y,m.rotation.z]}));},
  clear(){for(const m of [...referenceShapeGroup.children]){referenceShapeGroup.remove(m);m.geometry.dispose();m.material.dispose();}activeModelingBlock=null;},
  edit:{
   canvas:renderer.domElement,
