@@ -1478,7 +1478,14 @@ return axis.normalize();
 }
 
 function fingerAxis(side,f,frame,j=1){
- if(side!=="L")return originalFingerAxis(side,f,frame);
+ if(side==="R"){
+ const d=direction(fingerName(side,f,j),fingerName(side,f,j+1)) || direction(fingerName(side,f,j-1),fingerName(side,f,j));
+ if(!d)return null;
+ const normal=frame.normal.clone().addScaledVector(d,-frame.normal.dot(d));
+ if(normal.lengthSq()<1e-8)return null;
+ const axis=new THREE.Vector3().crossVectors(d,normal.normalize());
+ return axis.lengthSq()>1e-8?axis.normalize():null;
+ }
  // Independent left palm frame: orient toward the thumb's palmar offset.
  const normal=new THREE.Vector3().crossVectors(frame.along,frame.across).normalize();
  const thumb=rest.get(fingerName("L",1,2));
@@ -1526,7 +1533,7 @@ fingerName(side,f,j)
 if(!bone)continue;
 
 bone.quaternion.setFromAxisAngle(
-(side==="L" ? fingerAxis(side,f,frame,j) || axis : axis),rad(angles[j-1]*curl)
+(fingerAxis(side,f,frame,j) || axis),rad(angles[j-1]*curl)
 );
 
 if(j===1){
