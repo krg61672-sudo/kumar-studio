@@ -3564,6 +3564,20 @@ document.title="Kumar Studio V5.0";
 
 
 
+
+// Stable manual-blocking bridge. Exposes only pose snapshots and application.
+window.KumarBlockingBridge={
+ getRig(){return posed?{boneNames:bones.map(b=>b.name),count:bones.length}:null;},
+ capture(){if(!posed)return null;return {names:bones.map(b=>b.name),rotations:bones.map(b=>b.quaternion.toArray()),positions:bones.map(b=>b.position.toArray())};},
+ apply(frame){if(!posed||!frame||!Array.isArray(frame.names)||!Array.isArray(frame.rotations)||!Array.isArray(frame.positions))return false;
+ const lookup=new Map(frame.names.map((name,i)=>[name,i]));let changed=0;
+ for(const bone of bones){const i=lookup.get(bone.name);if(i===undefined)continue;
+ const q=frame.rotations[i],p=frame.positions[i];if(!Array.isArray(q)||q.length!==4||!Array.isArray(p)||p.length!==3||![...q,...p].every(Number.isFinite))continue;
+ bone.quaternion.fromArray(q).normalize();bone.position.fromArray(p);changed++;}
+ posed.updateMatrixWorld(true);syncJoint();return changed>0;},
+ stopAnimations(){try{seqStop();}catch(e){}try{motionRestore();}catch(e){}try{captureRestore();}catch(e){}try{stop410();}catch(e){}}
+};
+
 renderer.setAnimationLoop(()=>{
 if(blenderMixer)blenderMixer.update(Math.min(.1,blenderClock.getDelta()));else blenderClock.getDelta();
 if(posed&&rigGeneration!==generation)clearRig();
@@ -3627,5 +3641,6 @@ render();
 </script>
 <script src="./addons/render-capture.js" defer></script>
 <script src="./addons/character-workspace.js" defer></script>
+<script src="./addons/blocking-studio.js" defer></script>
 </body>
 </html>
