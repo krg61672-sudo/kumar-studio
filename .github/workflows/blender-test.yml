@@ -1,0 +1,51 @@
+name: Blender Python Test
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/blender-test.yml'
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Blender Python
+        run: python -m pip install bpy==4.3.0
+      - name: Test animated GLB roundtrip
+        run: |
+          python - <<'PY'
+          import bpy, sys, runpy
+          bpy.ops.wm.read_factory_settings(use_empty=True)
+          bpy.ops.object.armature_add()
+          rig = bpy.context.object
+          bone = rig.pose.bones[0]
+          bone.rotation_mode = 'XYZ'
+          bone.keyframe_insert(data_path='rotation_euler', frame=1)
+          bone.rotation_euler.x = 0.4
+          bone.keyframe_insert(data_path='rotation_euler', frame=30)
+          bpy.ops.mesh.primitive_cube_add(size=0.5)
+          mesh = bpy.context.object
+          group = mesh.vertex_groups.new(name=bone.name)
+          group.add(list(range(len(mesh.data.vertices))), 1.0, 'REPLACE')
+          modifier = mesh.modifiers.new('Armature', 'ARMATURE')
+          modifier.object = rig
+          mesh.parent = rig
+          bpy.ops.export_scene.gltf(filepath='/tmp/input.glb', export_format='GLB', export_animations=True)
+          sys.argv = ['roundtrip.py', '--', '/tmp/input.glb', '/tmp/output.glb']
+          runpy.run_path('animation_engine/roundtrip.py', run_name='__main__')
+          bpy.ops.wm.read_factory_settings(use_empty=True)
+          bpy.ops.import_scene.gltf(filepath='/tmp/output.glb')
+          assert bpy.data.actions and any(o.type == 'ARMATURE' for o in bpy.context.scene.objects)
+          print('BLENDER ROUNDTRIP PASS', bpy.app.version_string)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blender-smoke-output
+          path: /tmp/output.glb
+          retention-days: 1
