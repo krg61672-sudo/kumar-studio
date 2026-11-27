@@ -3359,18 +3359,63 @@ const trainingStage=new THREE.Group();scene.add(trainingStage);
 const stageFloor=new THREE.Mesh(new THREE.PlaneGeometry(24,24),new THREE.MeshStandardMaterial({color:0x626c70,roughness:1}));stageFloor.rotation.x=-Math.PI/2;stageFloor.position.y=-.012;trainingStage.add(stageFloor);
 const propGroup=new THREE.Group();trainingStage.add(propGroup);
 function stageBox(w,h,d,x,y,z,color,parent=propGroup){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshStandardMaterial({color,roughness:.8}));m.position.set(x,y,z);parent.add(m);return m;}
-const chair=new THREE.Group();propGroup.add(chair);
-stageBox(.48,.055,.48,0,.45,0,0x76523b,chair);
-for(const x of [-.19,.19])for(const z of [-.19,.19])stageBox(.055,.43,.055,x,.215,z,0x513b2e,chair);
-stageBox(.48,.40,.055,0,.70,-.21,0x76523b,chair);
-chair.position.set(1.4,0,0);
-const stairs=new THREE.Group();propGroup.add(stairs);stairs.position.set(-1.7,0,1);
-for(let i=0;i<4;i++)stageBox(.85,.15*(i+1),.30,0,.075*(i+1),-.30*i,0x92969a,stairs);
-const trainingPanel=document.createElement("details");trainingPanel.open=true;
-trainingPanel.innerHTML='<summary>Motion Testing Environment</summary><label><input type="checkbox" id="stageOn" checked> Environment ON/OFF</label><label><input type="checkbox" id="stageGrid" checked> Distance grid (0.5 units)</label><label><input type="checkbox" id="stageChair" checked> Chair</label><label><input type="checkbox" id="stageStairs" checked> Stairs</label><label>Chair X <input id="chairX" type="range" min="-3" max="3" step=".05" value="1.4"></label><label>Chair Z <input id="chairZ" type="range" min="-3" max="3" step=".05" value="0"></label><label>Chair rotation <input id="chairYaw" type="range" min="-180" max="180" value="0"></label><label>Seat height scale <input id="chairHeight" type="range" min=".65" max="1.35" step=".01" value="1"></label><p>Reference props only; automatic seat and stair contact not yet implemented.</p>';
+// Camera & lighting stage replaces obsolete chair/stair reference props.
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+key.castShadow=true;
+key.shadow.mapSize.set(2048,2048);
+key.shadow.camera.left=-4;key.shadow.camera.right=4;
+key.shadow.camera.top=5;key.shadow.camera.bottom=-3;
+key.shadow.camera.near=.1;key.shadow.camera.far=30;
+key.shadow.bias=-.0002;
+stageFloor.receiveShadow=true;
+const studioCameraMarker=new THREE.Group();
+const cameraBody=stageBox(.20,.13,.25,0,0,0,0x202b3a,studioCameraMarker);
+const lens=new THREE.Mesh(new THREE.CylinderGeometry(.065,.065,.12,16),new THREE.MeshStandardMaterial({color:0x182d45,metalness:.45,roughness:.35}));
+lens.rotation.x=Math.PI/2;lens.position.z=.17;studioCameraMarker.add(lens);
+studioCameraMarker.position.set(1.45,1.4,1.3);propGroup.add(studioCameraMarker);
+const studioLightMarker=new THREE.Group();
+const lightBody=stageBox(.28,.22,.09,0,0,0,0xffd89b,studioLightMarker);
+studioLightMarker.position.copy(key.position);propGroup.add(studioLightMarker);
+const trainingPanel=document.createElement("details");trainingPanel.open=false;
+trainingPanel.innerHTML='<summary>Camera & Lighting Studio</summary>'+
+'<label><input type="checkbox" id="stageOn" checked> Stage background</label>'+
+'<label><input type="checkbox" id="stageGrid" checked> Floor grid</label>'+
+'<label><input type="checkbox" id="stageCamera" > Show camera marker</label>'+
+'<label><input type="checkbox" id="stageLightMarker" > Show light marker</label>'+
+'<label><input type="checkbox" id="stageLightOn" checked> Key light ON/OFF</label>'+
+'<label><input type="checkbox" id="stageShadow" checked> Real-time character shadows</label>'+
+'<label>Light brightness <input id="stageLightPower" type="range" min="0" max="5" step=".1" value="2.5"></label>'+
+'<label>Shadow contrast <input id="stageShadowContrast" type="range" min="0" max="1" step=".05" value=".45"></label>'+
+'<label>Shadow softness <input id="stageShadowSoft" type="range" min="0" max="5" step=".25" value="2"></label>'+
+'<label>Light left / right <input id="stageLightX" type="range" min="-6" max="6" step=".1" value="3"></label>'+
+'<label>Light height <input id="stageLightY" type="range" min=".2" max="9" step=".1" value="5"></label>'+
+'<label>Light front / back <input id="stageLightZ" type="range" min="-6" max="6" step=".1" value="4"></label>'+
+'<button id="stageCameraFront" type="button">Front Camera</button>'+
+'<button id="stageCameraFace" type="button">Face Close-up</button>'+
+'<button id="stageCameraFull" type="button">Full Character</button>'+
+'<p>Move the key light to create directional facial shadows. Shadow visibility depends on character geometry and light angle.</p>';
 document.querySelector("aside").prepend(trainingPanel);
-function updateStage(){const enabled=$("stageOn").checked;trainingStage.visible=enabled;grid.visible=enabled&&$("stageGrid").checked;chair.visible=$("stageChair").checked;stairs.visible=$("stageStairs").checked;chair.position.x=Number($("chairX").value);chair.position.z=Number($("chairZ").value);chair.rotation.y=THREE.MathUtils.degToRad(Number($("chairYaw").value));chair.scale.y=Number($("chairHeight").value);scene.background.set(enabled?0x84939e:0x0c1220);}
-for(const id of ["stageOn","stageGrid","stageChair","stageStairs","chairX","chairZ","chairYaw","chairHeight"])$(id).oninput=updateStage;
+function updateStage(){
+const enabled=$("stageOn").checked;
+trainingStage.visible=enabled;stageFloor.visible=enabled;
+grid.visible=enabled&&$("stageGrid").checked;
+studioCameraMarker.visible=enabled&&$("stageCamera").checked;
+studioLightMarker.visible=enabled&&$("stageLightMarker").checked;
+key.visible=$("stageLightOn").checked;
+key.intensity=Number($("stageLightPower").value);
+key.position.set(Number($("stageLightX").value),Number($("stageLightY").value),Number($("stageLightZ").value));
+studioLightMarker.position.copy(key.position);
+key.castShadow=$("stageShadow").checked;
+key.shadow.radius=Number($("stageShadowSoft").value);
+const contrast=Number($("stageShadowContrast").value);
+fill.intensity=1.5*(1-contrast);
+scene.background.set(enabled?0x84939e:0x0c1220);
+}
+for(const id of ["stageOn","stageGrid","stageCamera","stageLightMarker","stageLightOn","stageShadow","stageLightPower","stageShadowContrast","stageShadowSoft","stageLightX","stageLightY","stageLightZ"])$(id).addEventListener("input",updateStage);
+$("stageCameraFront").onclick=()=>$("front").click();
+$("stageCameraFace").onclick=()=>$("face").click();
+$("stageCameraFull").onclick=()=>$("full").click();
 updateStage();
 
 const mocapPanel=document.createElement("details");mocapPanel.open=true;
@@ -3578,7 +3623,9 @@ window.KumarBlockingBridge={
  stopAnimations(){try{seqStop();}catch(e){}try{motionRestore();}catch(e){}try{captureRestore();}catch(e){}try{stop410();}catch(e){}}
 };
 
-renderer.setAnimationLoop(()=>{
+let shadowRig=null;
+function refreshShadowCasters(){if(shadowRig===posed)return;shadowRig=posed;if(posed)posed.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});}
+renderer.setAnimationLoop(()=>{refreshShadowCasters();
 if(blenderMixer)blenderMixer.update(Math.min(.1,blenderClock.getDelta()));else blenderClock.getDelta();
 if(posed&&rigGeneration!==generation)clearRig();
 controls.update();
