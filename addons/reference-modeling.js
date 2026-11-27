@@ -12,6 +12,7 @@ panel.innerHTML=`<summary>REFERENCE IMAGE & SHAPE MODELING</summary>
 <label>Image left/right <input id="refX" type="range" min="-100" max="100" value="0"></label>
 <label>Image up/down <input id="refY" type="range" min="-100" max="100" value="0"></label>
 <button id="refClear" type="button">Remove Reference Image</button><section id="refScaleSection"><h4>Scale & Selection</h4><label>Resize target <select id="refScaleTarget"><option value="image">Reference image only</option><option value="shape">Selected 3D shape only</option><option value="both">Image + selected shape together</option></select></label><label>Scale <strong id="refScaleLabel">100%</strong><input id="refScaleSlider" type="range" min="20" max="300" step="1" value="100"></label><div class="refButtons"><button id="refScaleDown" type="button">− Smaller</button><button id="refScaleUp" type="button">+ Bigger</button></div><button id="refScaleReset" type="button">Reset Scale to 100%</button><p id="refScaleHelp">Select image, shape, or both. The slider changes only your chosen target.</p></section>
+<h4>Human Character Blockout</h4><p>Create a proportioned editable human blockout as a starting point. This is not a finished detailed character or rigged mesh.</p><button id="refHumanBase" type="button">+ Human Base Blockout (A-Pose)</button><p id="refHumanStatus" aria-live="polite">Use Front and Side views to refine proportions after creation.</p>
 <h4>3D Blockout Shapes</h4><div class="refButtons"><button id="refModelUndo" type="button">↶ Undo Shape</button><button id="refModelRedo" type="button">↷ Redo Shape</button></div>
 <div class="refButtons"><button data-shape="box" type="button">+ Box</button><button data-shape="sphere" type="button">+ Sphere</button><button data-shape="cylinder" type="button">+ Cylinder</button><button data-shape="capsule" type="button">+ Capsule</button></div>
 <label>Selected block <select id="refBlocks"><option value="">Choose block</option></select></label><section id="refShapeVisibility"><h4>Shape Visibility</h4><label><input id="refShapeVisible" type="checkbox" checked> Show selected shape</label><label>Shape overlay mode <select id="refShapeMode"><option value="solid">Solid</option><option value="transparent">Transparent</option><option value="wireframe">Wireframe / Mesh Lines</option><option value="xray">X-Ray (through other shapes)</option><option value="ghost">Ghost (light overlay)</option></select></label><label>Shape opacity <output id="refShapeOpacityValue">100%</output><input id="refShapeOpacity" type="range" min="10" max="100" value="100"></label><div id="refShapeVisibilityList"></div><p id="refShapeVisibilityHint">Add a shape to control its visibility independently from the reference photo.</p></section>
@@ -91,6 +92,26 @@ function renderShapeVisibility(){
 $('refShapeVisible').onchange=()=>{if(selected<0){say('Select a shape first.');return;}bridge.setVisible(selected,$('refShapeVisible').checked);renderShapeVisibility();};
 $('refShapeOpacity').oninput=()=>{if(selected<0){say('Select a shape first.');return;}const value=Number($('refShapeOpacity').value);bridge.setOpacity(selected,value/100);$('refShapeOpacityValue').textContent=value+'%';};
 
+$('refHumanBase').onclick=()=>{
+ const parts=[
+  ['sphere',0,1.68,0,.25,.32,.23], // head
+  ['cylinder',0,1.42,0,.105,.12,.11], // neck
+  ['box',0,1.16,0,.47,.56,.26], // chest torso
+  ['box',0,.82,0,.36,.22,.25], // pelvis
+  ['capsule',-.36,1.16,0,.16,.43,.16],['capsule',.36,1.16,0,.16,.43,.16], // arms
+  ['capsule',-.52,.85,0,.13,.36,.13],['capsule',.52,.85,0,.13,.36,.13], // forearms
+  ['sphere',-.55,.54,0,.10,.16,.09],['sphere',.55,.54,0,.10,.16,.09], // hands
+  ['capsule',-.19,.48,0,.22,.60,.22],['capsule',.19,.48,0,.22,.60,.22], // thighs
+  ['capsule',-.19,-.15,0,.16,.51,.16],['capsule',.19,-.15,0,.16,.51,.16], // shins
+  ['box',-.19,-.48,.13,.18,.14,.34],['box',.19,-.48,.13,.18,.14,.34] // feet
+ ];
+ for(const [type,x,y,z,sx,sy,sz] of parts){
+  bridge.add(type);
+  bridge.transform({position:{x,y:y+.55,z},scale:{x:sx/.35,y:sy/.35,z:sz/.35}});
+ }
+ selected=bridge.list().length-1;refresh();captureScaleBaseline();
+ $('refHumanStatus').textContent='Human blockout created with '+parts.length+' individually editable shapes. Select a part in Selected block to refine it.';
+};
 panel.querySelectorAll('[data-shape]').forEach(b=>b.onclick=()=>{bridge.add(b.dataset.shape);selected=bridge.list().length-1;refresh();captureScaleBaseline();setDeform();say('3D '+b.dataset.shape+' added. Adjust its position, size and rotation.');});
 $('refBlocks').onchange=e=>{selected=e.target.value===''?-1:Number(e.target.value);refresh();captureScaleBaseline();deformIds.forEach((id,i)=>{$(id).value=String([100,100,100,0,0][i]);});};
 $('refModelUndo').onclick=()=>{if(!bridge.undo()){say('Nothing to undo yet.');return;}selected=bridge.list().length-1;refresh();captureScaleBaseline();say('Last shape add/delete undone.');};
