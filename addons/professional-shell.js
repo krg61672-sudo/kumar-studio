@@ -33,7 +33,7 @@ function choose(name){
  const navBtn=[...(nav?.querySelectorAll('button')||[])].find(b=>b.textContent.trim()===target);
  navBtn?.click();
  const char=name==='Character'||name==='Modeling'||name==='Sculpt';
- if(ref){ref.hidden=!char;if(name==='Modeling'){ref.open=true;aside.prepend(ref);}}
+ if(ref){ref.hidden=!char;if(name==='Modeling'){ref.open=true;aside.prepend(ref);}setTimeout(()=>{ref.hidden=!char;if(name==='Modeling')aside.prepend(ref);},0);}
  if(libraryPanel){libraryPanel.hidden=name!=='Character';libraryPanel.open=false;}
  if(name==='Modeling'&&!ref){document.getElementById('ksInspectorTitle').textContent='MODELING TOOLS UNAVAILABLE';}
  const modelingOnly=name==='Modeling';
@@ -83,7 +83,8 @@ body.ks-pro main>section#ksInspector>aside{width:100%!important;max-width:none!i
 #ksWorkflowNav{display:none!important}
 body.ks-pro #ksTouchToolbar,body.ks-pro #ksTouchHint{display:none!important}
 body.ks-pro #referenceModeling{order:-100!important}
-body.ks-pro #characterWorkspace[hidden]{display:none!important}
+body.ks-pro #characterWorkspace[hidden],body.ks-pro #referenceModeling[hidden]{display:none!important}
+body.ks-pro #ksTouchToolbar,body.ks-pro #ksTouchHint{visibility:hidden!important;pointer-events:none!important}
 #ksProTimeline{flex:0 0 92px;min-height:0;background:#1b1e25;border-top:1px solid #3a4049;padding:4px 12px;overflow:auto}
 #ksProTimeline.collapsed{flex-basis:28px}
 .ks-timeline-title{display:flex;justify-content:space-between;align-items:center;color:#e1b16a;font-size:11px;letter-spacing:.08em;height:24px}
