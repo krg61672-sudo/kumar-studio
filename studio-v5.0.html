@@ -3714,7 +3714,18 @@ window.KumarShapeBridge={
  }
 };
 
-renderer.setAnimationLoop(()=>{refreshShadowCasters();
+// Modeling is a blank blockout canvas; the MakeHuman rig remains preserved for other workspaces.
+let kumarModelingBlank=false;
+window.KumarWorkspaceVisibility=function(mode){
+ kumarModelingBlank=(mode==='Modeling'||mode==='Sculpt');
+ if(mesh)mesh.visible=!kumarModelingBlank;
+ if(posed)posed.visible=!kumarModelingBlank;
+ if(rigHelper)rigHelper.visible=!kumarModelingBlank;
+ if(rigSource)rigSource.visible=false;
+ if(modelingGroup)modelingGroup.visible=true;
+ referenceShapeGroup.visible=true;
+};
+renderer.setAnimationLoop(()=>{if(kumarModelingBlank){if(mesh)mesh.visible=false;if(posed)posed.visible=false;if(rigHelper)rigHelper.visible=false;}refreshShadowCasters();
 if(blenderMixer)blenderMixer.update(Math.min(.1,blenderClock.getDelta()));else blenderClock.getDelta();
 if(posed&&rigGeneration!==generation)clearRig();
 controls.update();
