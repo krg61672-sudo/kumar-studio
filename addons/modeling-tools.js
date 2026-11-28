@@ -82,6 +82,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
   knifeOverlay.style.cssText = 'display:none;position:absolute;pointer-events:none;z-index:6';
   canvas.parentElement.append(knifeOverlay);
   let selection, interaction, pendingTap, knifeDrag, retopoMesh, lastLoop;
+  const componentTouches = new Set();
   let knifePoints = [], knifeHover;
   const selectedObjects = new Set();
   const surfaceTrees = new WeakMap();
@@ -175,6 +176,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
   }
 
   function updateViewport() {
+    componentTouches.clear();
     controls.enabled = true;
     if (editing() && mode.value === 'retopo') {
       field('ksRetopoTools').open = true;
@@ -469,9 +471,13 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
 
   // A tap picks components. A drag on a gizmo is handled by TransformControls.
   canvas.addEventListener('pointerdown', event => {
+    if (event.pointerType === 'touch' && editing() && !busy && mode.value !== 'object') {
+      componentTouches.add(event.pointerId);
+      controls.enabled = false;
+    }
     if (!event.isPrimary) {
       pendingTap = undefined;
-      if (interaction) event.stopImmediatePropagation();
+      if (interaction || componentTouches.size) event.stopImmediatePropagation();
       return;
     }
     if (!editing() || busy || ['off','knife'].includes(mode.value) || event.button !== 0) return;
@@ -485,26 +491,31 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
         return;
       }
     }
-    if (mode.value !== 'object' &&
-        (event.pointerType !== 'touch' || section.querySelector('#ksComponentDrag').checked)) {
-      controls.enabled = false;
-    }
+    if (mode.value !== 'object') controls.enabled = false;
     // TransformControls updates its axis for touch before firing mouseDown.
     pendingTap = {id: event.pointerId, x: event.clientX, y: event.clientY, additive};
     if (additive) event.stopImmediatePropagation();
   }, true);
   canvas.addEventListener('pointermove', event => {
-    if (interaction && !event.isPrimary) event.stopImmediatePropagation();
+    if ((interaction || componentTouches.size) && !event.isPrimary) event.stopImmediatePropagation();
   }, true);
   canvas.addEventListener('pointerup', event => {
-    if (interaction && !event.isPrimary) {
-      event.stopImmediatePropagation();
+    if (!event.isPrimary) {
+      pendingTap = undefined;
+      componentTouches.delete(event.pointerId);
+      controls.enabled = componentTouches.size === 0;
+      if (interaction || componentTouches.size) event.stopImmediatePropagation();
       return;
     }
     const start = pendingTap;
     pendingTap = undefined;
+    if (event.pointerType === 'touch') componentTouches.delete(event.pointerId);
+    controls.enabled = componentTouches.size === 0;
+    if (componentTouches.size) {
+      event.stopImmediatePropagation();
+      return;
+    }
     if (interaction) return;
-    controls.enabled = true;
     if (!start || start.id !== event.pointerId || !editing()) return;
     try {
       const dx = event.clientX - start.x, dy = event.clientY - start.y;
@@ -587,9 +598,14 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
   }
   gizmo.addEventListener('mouseUp', () => finishTransform(false));
   canvas.addEventListener('pointercancel', event => {
-    if (!event.isPrimary) return;
+    if (event.pointerType === 'touch') componentTouches.delete(event.pointerId);
+    controls.enabled = componentTouches.size === 0;
+    if (!event.isPrimary) {
+      pendingTap = undefined;
+      if (interaction || componentTouches.size) event.stopImmediatePropagation();
+      return;
+    }
     pendingTap = undefined;
-    controls.enabled = true;
     if (!interaction) return;
     finishTransform(true);
     gizmo.domElement.removeEventListener('pointermove', gizmo._onPointerMove);
