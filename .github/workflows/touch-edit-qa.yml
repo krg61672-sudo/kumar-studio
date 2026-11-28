@@ -22,9 +22,15 @@ jobs:
           node-version: '22'
       - name: Install browser QA dependencies
         run: npm install --prefix /tmp/ks-deps three@0.160.0 three-mesh-bvh@0.7.6 manifold-3d@3.5.5 playwright-core @sparticuz/chromium
+      - name: Fetch public MakeHuman rig fixtures
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/3dobjs/base.obj -o /tmp/ks-base.obj
+          curl -fsSL https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/rigs/default.mhskel -o /tmp/ks-default.mhskel
+          curl -fsSL https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/rigs/default_weights.mhw -o /tmp/ks-default_weights.mhw
       - name: Run touch editing and virtual controls in software WebGL
         env:
           KUMAR_QA_DEPS: /tmp/ks-deps
+          KUMAR_QA_ASSETS: /tmp
         run: |
           for device in phone tablet landscape desktop; do
             echo "Testing $device viewport"
