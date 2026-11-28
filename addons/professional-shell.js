@@ -152,6 +152,36 @@ const theme=document.createElement('style');theme.textContent=`
 body.ks-pro{background:#101217}body.ks-pro>header{background:#15171e;gap:10px}.ks-brand{flex-direction:row;align-items:center;gap:5px;letter-spacing:0;font-size:16px;white-space:nowrap}.ks-logo{color:#ffc34d}#ksProTabs button.active,#ksProTools button.selected{background:#51388f;border-color:#7957c5;color:white}#ksProTools{width:142px;flex-basis:142px;background:#181b23}#ksProTools button{flex-direction:row;justify-content:flex-start;gap:12px;min-height:42px!important;padding:7px 12px!important}.ks-tool-label{font-size:12px}.ks-tool-glyph{width:24px;text-align:center}#ksInspector{background:#151820}#ksInspector aside details{background:#20232c!important}#ksInspector aside summary,.ks-panel-head,.ks-timeline-title{color:#e1e2eb!important}#ksInspector aside input[type=range]{accent-color:#9470e8}#ksViewBar button:first-child{border-color:#7957c5;color:#e2d4ff}#ksPrimitiveDock{position:absolute;bottom:8px;left:8px;right:8px;display:flex;gap:5px;overflow-x:auto;background:#191c25ee;border:1px solid #393d49;border-radius:8px;padding:5px;z-index:7}#ksPrimitiveDock button{width:auto;flex:0 0 auto;margin:0;min-height:36px;background:#262a35;border-color:#424653;font-size:12px}#ksSceneTree{padding:10px;border-bottom:1px solid #393d49;max-height:30%;overflow:auto;font-size:12px}#ksSceneRows{margin-top:6px;color:#a9afbf}#ksSceneRows button{display:block;text-align:left;margin:2px 0;padding:5px 8px;background:transparent;border:0;color:#e0e2ea}#ksSceneRows button.active{background:#493478}#ksProTimeline{background:#171a22}body.ks-pro:not([data-ks-mode="Modeling"]) #ksPrimitiveDock{display:none}body.ks-pro:not([data-ks-mode="Modeling"]) #ksSceneTree{display:none}@media(max-width:1000px){#ksProTools{width:70px;flex-basis:70px}#ksProTools button{flex-direction:column;gap:2px;padding:4px!important}.ks-tool-label{font-size:10px}}@media(max-width:700px){#ksProTools{width:48px;flex-basis:48px}.ks-tool-label{font-size:8px}.ks-brand{font-size:11px;flex-direction:column;gap:0}#ksPrimitiveDock button{font-size:10px;min-height:32px}}
 `;document.head.append(theme);
 
+// Compact tablet layout; capture lives in the inspector, never over the mesh dock.
+const compactStyle=document.createElement('style');
+compactStyle.textContent=`
+body.ks-pro #ksInspector{width:clamp(190px,23vw,260px);flex-basis:clamp(190px,23vw,260px);position:relative;transition:none}
+body.ks-pro #ksInspector.collapsed{width:0!important;flex-basis:0!important}
+body.ks-pro #ksInspector>aside{box-sizing:border-box;min-width:0!important;overflow-x:hidden!important;overscroll-behavior:contain;padding:6px!important;font-size:12px}
+#ksInspector aside details{min-width:0!important;padding:0 6px 6px!important;margin:4px 0!important}
+#ksInspector aside summary{padding:7px 0!important;font-size:12px;overflow-wrap:anywhere}
+#ksInspector aside label,#ksInspector aside p{font-size:12px;overflow-wrap:anywhere;margin:5px 0}
+#ksInspector aside input,#ksInspector aside select,#ksInspector aside button{box-sizing:border-box;max-width:100%!important;min-width:0!important;font-size:12px}
+#ksInspector aside button,#ksInspector aside select{min-height:36px!important;padding:6px!important;margin:3px 0!important}
+#ksInspector aside input[type=file]{width:100%;color:#d9dee6}
+#ksInspector aside input[type=file]::file-selector-button{background:#303844;color:#eee;border:1px solid #525969;border-radius:5px;padding:5px}
+#ksInspector #ks-render-tools{position:static!important;width:auto!important;max-height:none!important;overflow:visible!important;z-index:auto!important;font:inherit!important}
+#ksInspector #ks-render-tools summary{color:#e1e2eb!important}
+#ksSceneTree{padding:6px;font-size:11px;overflow-x:hidden}
+#ksPrimitiveDock{max-width:calc(100% - 16px);box-sizing:border-box;touch-action:pan-x}
+#ksInspectorResize{position:absolute;left:0;top:44px;bottom:0;width:8px;cursor:ew-resize;touch-action:none;z-index:12;background:transparent}
+#ksInspectorResize:hover{background:#9470e8}
+#ksInspector.collapsed #ksInspectorResize{display:none}
+@media(max-width:700px){body.ks-pro #ksInspector{width:34vw;flex-basis:34vw}#ksInspector aside button,#ksInspector aside select{min-height:34px!important}}
+`;
+document.head.append(compactStyle);
+const resizeGrip=document.createElement('div');resizeGrip.id='ksInspectorResize';resizeGrip.title='Drag to resize properties';inspector.append(resizeGrip);
+let resizeStart=null;
+resizeGrip.addEventListener('pointerdown',e=>{resizeStart={x:e.clientX,w:inspector.getBoundingClientRect().width};resizeGrip.setPointerCapture(e.pointerId);e.preventDefault();});
+resizeGrip.addEventListener('pointermove',e=>{if(!resizeStart)return;const w=Math.max(160,Math.min(main.clientWidth*.48,resizeStart.w+resizeStart.x-e.clientX));inspector.style.width=w+'px';inspector.style.flexBasis=w+'px';window.dispatchEvent(new Event('resize'));});
+for(const event of ['pointerup','pointercancel','lostpointercapture'])resizeGrip.addEventListener(event,()=>{resizeStart=null;});
+function relocateCapture(){const capture=document.getElementById('ks-render-tools');if(capture&&capture.parentElement!==aside)aside.append(capture);}
+relocateCapture();new MutationObserver(relocateCapture).observe(view,{childList:true});
 choose('Modeling');
 window.addEventListener('load',()=>window.KumarWorkspaceVisibility?.(mode));
 setTimeout(()=>window.dispatchEvent(new Event('resize')),150);
