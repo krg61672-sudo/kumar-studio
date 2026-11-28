@@ -1,12 +1,16 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {createRequire}=require('node:module');
 const {pathToFileURL}=require('node:url');
+const {execFile}=require('node:child_process');
+const {promisify}=require('node:util');
+const os=require('node:os');
 const root=path.resolve(__dirname,'..');
 const dependencies=process.env.KUMAR_QA_DEPS || '/tmp/ks-deps';
 const requireDependency=createRequire(path.join(dependencies,'package.json'));
 const {chromium}=requireDependency('playwright-core');
 const assetDirectory=process.env.KUMAR_QA_ASSETS || '/tmp';
 const device=process.argv[2];
+const extended=process.env.KUMAR_QA_EXTENDED==='1';
 (async()=>{
  const chromiumPath=process.env.KUMAR_QA_CHROMIUM ||
    await (await import(pathToFileURL(requireDependency.resolve('@sparticuz/chromium')).href)).default.executablePath();
@@ -30,7 +34,13 @@ const device=process.argv[2];
    if(!fs.existsSync(file))return route.fulfill({status:404,body:''});
    const type=name.endsWith('.html')?'text/html':name.endsWith('.css')?'text/css':'application/javascript';
    if(name.endsWith('.html'))return route.fulfill({body:fs.readFileSync(file,'utf8').replace(
-    'scene.add(new THREE.HemisphereLight','window.ksTest={scene,camera,renderer,controls,THREE};\nscene.add(new THREE.HemisphereLight'),
+    'scene.add(new THREE.HemisphereLight','window.ksTest={scene,camera,renderer,controls,THREE};\nscene.add(new THREE.HemisphereLight')
+      .replace('renderer.setAnimationLoop(()=>', `Object.assign(window.ksTest,{
+       rig:()=>posed, gesture:setGesture, punchAt:t=>{if(t===0)capture410();punch410(t);},
+       walkAt:t=>{if(t===0){motionRestore();motionCapture();}motionPose(t);},
+       restore:motionRestore, preview:()=>blenderPreview
+      });
+renderer.setAnimationLoop(()=>`),
     contentType:type});
    return route.fulfill({path:file,contentType:type});
   });
@@ -319,7 +329,181 @@ const device=process.argv[2];
     await settings.getByRole('combobox',{name:'Joystick timeline'}).selectOption('seqTime');
     await toggleSettings();
     await stick('right',30,0);assert.ok(Number(await id('seqTime').inputValue())>0);
+    if (extended) {
+      await id('seqStop').evaluate(el=>el.click());
+      const evidence=await page.evaluate(()=>{
+        const api=ksTest,{THREE}=api,rig=api.rig();
+        const point=name=>rig.skeleton.getBoneByName(name).getWorldPosition(new THREE.Vector3());
+        const fingerVector=side=>Array.from({length:4},(_,i)=>point('finger'+(i+2)+'-3.'+side)
+          .distanceTo(point('wrist.'+side))).reduce((sum,v)=>sum+v,0)/4;
+        const round=n=>Number(n.toFixed(4));
+        const fingers={};
+        for(const side of ['L','R']){
+          api.gesture(side,'Open Hand'); const open=fingerVector(side);
+          api.gesture(side,'Closed Fist'); const closed=fingerVector(side);
+          fingers[side]=[round(open),round(closed)];
+          api.gesture(side,'Open Hand');
+        }
+        api.punchAt(0);
+        const open=[fingerVector('L'),fingerVector('R')];
+        api.punchAt(.5);
+        const punch=['L','R'].map((side,i)=>round(fingerVector(side)/open[i]));
+        rig.updateMatrixWorld(true);rig.skeleton.update();
+        let invalidVertices=0;
+        const vertex=new THREE.Vector3();
+        for(let i=0;i<rig.geometry.attributes.position.count;i++){
+          if(!rig.getVertexPosition(i,vertex).toArray().every(Number.isFinite))invalidVertices++;
+        }
+        api.punchAt(1);
+        document.getElementById('motionPreset').value='Walk';
+        document.getElementById('motionSteps').value='4';
+        api.walkAt(0);
+        const root=point('root'), left=point('foot.L'), right=point('foot.R');
+        const support=[];
+        for(const [side,times] of [['R',[.06,.12,.18]],['L',[.31,.37,.43]]]){
+          const samples=times.map(t=>{api.walkAt(t);return point('foot.'+side);});
+          support.push(round(Math.max(...samples.map(v=>v.distanceTo(samples[0])))));
+        }
+        api.walkAt(1);
+        const rootTravel=point('root').sub(root).setY(0).length();
+        const footTravel=[point('foot.L').distanceTo(left),point('foot.R').distanceTo(right)];
+        api.restore();
+        return {fingers,punch,invalidVertices,support,rootTravel:round(rootTravel),footTravel:footTravel.map(round)};
+      });
+      console.log('Rig diagnostics',JSON.stringify(evidence));
+      assert.equal(evidence.invalidVertices,0);
+      for(const [open,closed] of Object.values(evidence.fingers))assert.ok(closed<open*.9);
+      assert.ok(evidence.punch.every(ratio=>ratio<.9));
+      assert.ok(evidence.rootTravel>.3);
+      assert.ok(evidence.footTravel.every(distance=>distance>.3));
+      assert.ok(evidence.support.every(drift=>drift<.025));
+
+      const recording=path.join(assetDirectory,'ks-pirouette.bvh');
+      await id('bvhFile').setInputFiles(recording);
+      try {
+        await page.waitForFunction(()=>document.getElementById('bvhStatus').textContent.startsWith('Recording loaded'),null,{timeout:12000});
+      } catch {
+        throw Error('BVH did not load: '+await id('bvhStatus').textContent());
+      }
+      const beforeCapture=await bone();
+      await id('bvhTime').evaluate(input=>{input.value=340;input.dispatchEvent(new Event('input'));});
+      assert.notDeepEqual(await bone(),beforeCapture);
+      await id('bvhRestore').evaluate(el=>el.click());
+
+      let glb;
+      try {
+        const [download]=await Promise.all([
+          page.waitForEvent('download',{timeout:30000}),
+          page.getByText('Export selected motion for Blender (.glb)',{exact:true}).evaluate(el=>el.onclick())
+        ]);
+        glb=fs.readFileSync(await download.path());
+      } catch {
+        throw Error('Animated GLB did not download: '+await id('blenderStatus').textContent());
+      }
+      assert.equal(glb.toString('ascii',0,4),'glTF');
+      const gltf=JSON.parse(glb.toString('utf8',20,20+glb.readUInt32LE(12)));
+      assert.ok(gltf.skins[0].joints.length>40);
+      assert.equal(gltf.animations[0].name,'Walk');
+      assert.ok(gltf.animations[0].channels.length>80);
+      const blender=process.env.KUMAR_QA_BLENDER;
+      let previewBuffer=glb;
+      if(blender){
+        const temp=fs.mkdtempSync(path.join(os.tmpdir(),'kumar-roundtrip-'));
+        try {
+          const source=path.join(temp,'source.glb'),output=path.join(temp,'processed.glb');
+          fs.writeFileSync(source,glb);
+          const result=await promisify(execFile)(blender,[
+            '-b','-t','2','--python-exit-code','1','--python',
+            path.join(root,'animation_engine/roundtrip.py'),'--',source,output
+          ],{timeout:90000});
+          assert.match(result.stdout,/Roundtrip exported: [1-9]/);
+          console.log(result.stdout.split('\n').find(line=>line.includes('Roundtrip exported:')));
+          previewBuffer=fs.readFileSync(output);
+        } finally {
+          fs.rmSync(temp,{recursive:true,force:true});
+        }
+      }
+      const resourceCount=()=>page.evaluate(()=>({...ksTest.renderer.info.memory}));
+      const beforeImport=await resourceCount();
+      await id('blenderImport').setInputFiles({name:'walk.glb',mimeType:'model/gltf-binary',buffer:previewBuffer});
+      try {
+        await page.waitForFunction(()=>!!ksTest.preview(),null,{timeout:10000});
+      } catch {
+        throw Error('GLB preview did not load: '+await id('blenderStatus').textContent());
+      }
+      const previewPose=()=>page.evaluate(()=>{
+        const pose=[];
+        ksTest.preview().traverse(object=>{if(object.isBone)pose.push(...object.quaternion.toArray());});
+        return pose;
+      });
+      const beforePreview=await previewPose();
+      await page.waitForFunction(previous=>{
+        const pose=[];
+        ksTest.preview().traverse(object=>{if(object.isBone)pose.push(...object.quaternion.toArray());});
+        return pose.some((value,i)=>value!==previous[i]);
+      },beforePreview,{timeout:10000});
+      await id('blenderClear').evaluate(el=>el.click());
+      assert.equal(await page.evaluate(()=>ksTest.preview()),null);
+      const afterClear=await resourceCount();
+      assert.deepEqual(afterClear,beforeImport,'Clearing a rendered GLB preview must release its GPU resources');
+      console.log('BVH retarget scrub and animated GLB export/import',JSON.stringify({
+        joints:gltf.skins[0].joints.length,channels:gltf.animations[0].channels.length,bytes:glb.length
+      }));
+    }
     console.log('MakeHuman rig, joint and pose joystick, weapon grip, motion playback and action sequencer scrub passed');
+  }
+  if(extended) {
+    await page.getByRole('button',{name:'Modeling',exact:true}).click();
+    await add('sphere');await look('object');
+    const triangleCount=await page.evaluate(()=>{
+      const mesh=KumarShapeBridge.edit.active();
+      mesh.geometry.dispose();mesh.geometry=new ksTest.THREE.SphereGeometry(.23,144,144);
+      return mesh.geometry.index.count/3;
+    });
+    assert.ok(triangleCount>40000);
+    const sample=()=>page.evaluate(()=>{
+      const {memory}=ksTest.renderer.info;
+      return {geometries:memory.geometries,textures:memory.textures};
+    });
+    const heap=async()=>{
+      await client.send('HeapProfiler.collectGarbage');
+      return Math.round((await client.send('Runtime.getHeapUsage')).usedSize/104857.6)/10;
+    };
+    const collect=()=>page.evaluate(()=>{
+      window.stressFrames=[];
+      requestAnimationFrame(function next(t){
+        if(!window.stressFrames)return;
+        window.stressFrames.push(t);requestAnimationFrame(next);
+      });
+    });
+    await select('right','Editing joystick mode','move');
+    await select('right','Joystick axis lock','x');
+    const position=()=>page.evaluate(()=>KumarShapeBridge.edit.active().position.toArray());
+    const cycles=async count=>{
+      for(let i=0;i<count;i++){
+        const original=await position();
+        await stick('right',30,0,130);
+        assert.notDeepEqual(await position(),original);
+        assert.ok(await page.evaluate(()=>KumarShapeBridge.undo()));
+        assert.deepEqual(await position(),original);
+        assert.ok(await page.evaluate(()=>KumarShapeBridge.redo()));
+        assert.ok(await page.evaluate(()=>KumarShapeBridge.undo()));
+      }
+    };
+    await cycles(3);
+    const baseline=await sample(),heapBefore=await heap();
+    await collect();
+    const started=Date.now();
+    await cycles(40);
+    const frames=await page.evaluate(()=>{
+      const samples=window.stressFrames;window.stressFrames=null;
+      return samples.slice(1).map((t,i)=>t-samples[i]).sort((a,b)=>a-b);
+    });
+    const after=await sample(),heapAfter=await heap();
+    assert.ok(after.geometries<=baseline.geometries+2,{baseline,after});
+    assert.ok(after.textures<=baseline.textures+1,{baseline,after});
+    console.log('Dense mesh stress',JSON.stringify({triangleCount,cycles:40,seconds:(Date.now()-started)/1000,
+      frameSamples:frames.length,p95Ms:frames[Math.floor(frames.length*.95)],baseline,after,heapBefore,heapAfter}));
   }
   await toggleSettings();
   await settings.locator('details').first().evaluate(el=>el.open=true);

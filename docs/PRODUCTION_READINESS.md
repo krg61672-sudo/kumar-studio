@@ -76,3 +76,27 @@ node tests/virtual-controls.cjs landscape
 ```
 
 The runner accepts alternative paths through `KUMAR_QA_DEPS`, `KUMAR_QA_ASSETS` and `KUMAR_QA_CHROMIUM`.
+
+## Extended rig, export and dense-mesh QA
+
+The extended browser runner uses the official MakeHuman mesh and its 163-joint skeleton. Coordinates are in Studio world units.
+
+| Workflow | Status | Observed evidence |
+|---|---|---|
+| Bilateral fist and punch midpoint | PASS | Mean finger-end distance to wrist changed from 0.1530 to 0.0878 on both sides. At punch midpoint both measurements were 57.4% of the open-hand distance. All skinned vertices remained finite. |
+| Natural Standing | PASS | In a separate browser spot-check, each upper-arm vector had a 0.992 dot product with vertical down, and each elbow had a 1.000 alignment between upper arm and forearm. |
+| Four-step Walk | PASS | Horizontal root travel was 0.9255. Sampled support-foot drift was at most 0.0051 on the final run. The check covers the sampled phases and the numerical criteria above. |
+| Recorded BVH scrub | PASS | The sample loaded through the Studio file input and scrubbing changed the MakeHuman bone rotations. |
+| Animated GLB and Blender round trip | PASS | The Studio export included 163 joints and 326 animation channels. Blender 4.3.2 processed 1 rig, 2 meshes and 1 action. The processed GLB re-imported and its bone animation played in Studio. |
+| Preview resource cleanup and dense editing history | PASS | Removing the animated preview returned renderer resource counts to baseline. A 41,184-triangle mesh completed 40 Move/Undo/Redo cycles with renderer counts stable at 22 geometries and 2 textures. GC-sampled JavaScript heap was 12.8 MiB before and 12.3 MiB after. |
+| Performance and hardware | PARTIAL | The dense software-WebGL run had a 149.9 ms p95 frame interval during the mixed input/history workload. Physical iPad Air 4, Realme 11x and driver-level GPU memory were not tested. |
+| Visual and production certification | PARTIAL | Full-frame foot contact, anatomical finger and punch deformation, multi-minute scenes and other release gates still need broader verification. |
+
+Run the extended suite after installing the Chromium dependencies and the MakeHuman fixtures listed above.
+
+```sh
+curl -fsSL https://threejs.org/examples/models/bvh/pirouette.bvh -o /tmp/ks-pirouette.bvh
+KUMAR_QA_EXTENDED=1 KUMAR_QA_BLENDER=/usr/bin/blender node tests/virtual-controls.cjs
+```
+
+Omit `KUMAR_QA_BLENDER` to check the direct browser export/import path.

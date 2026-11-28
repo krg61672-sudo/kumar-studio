@@ -3558,7 +3558,19 @@ animatedExport.onclick=async()=>{
  }catch(e){status.textContent=e.message;}finally{if(snapshot&&motionBase===snapshot&&posed===rig)motionRestore();}
 };
 function clearBlenderPreview(){
- if(blenderPreview)scene.remove(blenderPreview);
+ if(blenderPreview){
+  const owned=new Set();
+  blenderPreview.traverse(object=>{
+   if(object.geometry)owned.add(object.geometry);
+   if(object.skeleton)owned.add(object.skeleton);
+   for(const material of [object.material].flat().filter(Boolean)){
+    owned.add(material);
+    for(const value of Object.values(material))if(value?.isTexture)owned.add(value);
+   }
+  });
+  scene.remove(blenderPreview);
+  for(const resource of owned)resource.dispose();
+ }
  if(blenderSkeleton){
   scene.remove(blenderSkeleton);
   blenderSkeleton.dispose();
