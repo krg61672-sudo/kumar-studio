@@ -329,11 +329,14 @@ renderer.setAnimationLoop(()=>`),
         if(new Set(tri).size!==3)throw Error('Voxel remesh produced a degenerate triangle');
         for(let j=0;j<3;j++){const a=tri[j],b=tri[(j+1)%3],key=a<b?a+':'+b:b+':'+a;edges.set(key,(edges.get(key)||0)+1);}
       }
-      return {vertices:p.count,triangles:index.length/3,watertight:[...edges.values()].every(count=>count===2),min,max,
-        finite:Array.from(p.array).every(Number.isFinite)};
+      const edgeCounts=[...edges.values()];
+      return {vertices:p.count,triangles:index.length/3,watertight:edgeCounts.every(count=>count===2),
+        boundaryEdges:edgeCounts.filter(count=>count===1).length,overusedEdges:edgeCounts.filter(count=>count>2).length,
+        min,max,finite:Array.from(p.array).every(Number.isFinite)};
     });
     assert.ok(voxel.vertices>100&&voxel.triangles>100,voxel);
-    assert.ok(voxel.watertight,voxel);
+    console.log('Voxel Remesh topology diagnostics:',JSON.stringify(voxel));
+    assert.ok(voxel.watertight,JSON.stringify(voxel));
     assert.ok(voxel.finite,voxel);
     assert.ok(voxel.max.every((v,i)=>v-voxel.min[i]>.25),voxel);
     console.log('Voxel Remesh passed on a real editable sphere:',voxel);
