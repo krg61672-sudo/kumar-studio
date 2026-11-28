@@ -274,6 +274,15 @@ function advancedStroke(mode,delta,radius,strength,e){
  if(!a||mesh!==gesture.mesh||a.count>150000||g.morphAttributes.position?.length||mesh.isSkinnedMesh)return false;
  let mask=sculptMasks.get(g);if(!mask||mask.length!==a.count){mask=new Float32Array(a.count);sculptMasks.set(g,mask);}
  const src=Float32Array.from(a.array), c=gesture.center,n=gesture.normal;
+ // Weld coincident corners for neighborhood smoothing, including non-indexed meshes.
+ let smoothData=null;
+ if(mode==='smooth'){
+ const ids=new Int32Array(a.count), map=new Map(), points=[], neighbors=[];
+ for(let i=0;i<a.count;i++){const j=i*3,key=[src[j],src[j+1],src[j+2]].map(v=>Math.round(v*1e6)).join(',');let id=map.get(key);if(id===undefined){id=points.length;map.set(key,id);points.push([src[j],src[j+1],src[j+2]]);neighbors.push(new Set());}ids[i]=id;}
+ const idx=g.index,total=idx?idx.count:a.count;
+ for(let i=0;i+2<total;i+=3){const tri=[0,1,2].map(k=>ids[idx?idx.getX(i+k):i+k]);for(let k=0;k<3;k++){const u=tri[k],v=tri[(k+1)%3];if(u!==v){neighbors[u].add(v);neighbors[v].add(u);}}}
+ smoothData={ids,points,neighbors};
+ }
  const centers=[{c,n,d:delta}];
  for(const [axis,id] of [[0,'refMirror'],[1,'refMirrorY'],[2,'refMirrorZ']])if($(id).checked&&Math.abs(c[axis])>1e-5){for(const h of centers.slice()){const reflect=v=>v.map((x,k)=>k===axis?-x:x);centers.push({c:reflect(h.c),n:reflect(h.n),d:reflect(h.d)});}}
  const fall=$('refFalloff').value, amount=Math.min(.12,Math.hypot(e.clientX-gesture.x,e.clientY-gesture.y)*.006*strength);
@@ -288,7 +297,12 @@ function advancedStroke(mode,delta,radius,strength,e){
    const t=1-dist/radius,w=fall==='linear'?t:fall==='sharp'?t*t:t*t*(3-2*t),dot=v.reduce((sum,x,k)=>sum+x*hit.n[k],0);
    if(mode==='mask'||mode==='unmask'){mask[i]=Math.max(0,Math.min(1,mask[i]+(mode==='mask'?1:-1)*w*amount));changed=true;continue;}
    let move;
-   if(mode==='smooth')move=p.map((x,k)=>(avg[k]-x)*amount);
+   if(mode==='smooth'){
+ const id=smoothData.ids[i],ns=smoothData.neighbors[id],mean=[0,0,0];
+ for(const j of ns)for(let k=0;k<3;k++)mean[k]+=smoothData.points[j][k];
+ move=ns.size?p.map((x,k)=>(mean[k]/ns.size-x)*amount):[0,0,0];
+ const len=Math.hypot(...move),cap=radius*.04;if(len>cap)move=move.map(x=>x*cap/len);
+ }
    else if(mode==='flatten'||(mode==='scrape'&&dot>0)||(mode==='fill'&&dot<0))move=hit.n.map(x=>-x*dot*amount);
    else if(mode==='pinch'||mode==='crease')move=v.map((x,k)=>-(x-dot*hit.n[k])*amount-(mode==='crease'?hit.n[k]*radius*amount*.3:0));
    else if(mode==='scrape'||mode==='fill')move=[0,0,0];
@@ -332,7 +346,7 @@ canvas.addEventListener('pointerdown',e=>{
  let hit=edit.brushAt(e.clientX,e.clientY);if(!hit)return;
  if($('refAutoDetail').checked){
  const m=edit.active(),g=m.geometry,a=g.attributes.position;
- if(!m.isSkinnedMesh&&!g.morphAttributes.position?.length&&!sculptMasks.has(g)&&a.count<12000){
+ if(!m.isSkinnedMesh&&!g.morphAttributes.position?.length&&!sculptMasks.get(g)?.some(v=>v>0)&&a.count<12000){
  const idx=g.index,n=idx?idx.count:a.count;let refine=false;
  for(let i=0;i<n;i+=3){
  const p=[0,1,2].map(k=>{const j=idx?idx.getX(i+k):i+k;return [a.getX(j),a.getY(j),a.getZ(j)];});
