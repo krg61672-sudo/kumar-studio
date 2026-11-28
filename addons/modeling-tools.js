@@ -471,7 +471,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
 
   // A tap picks components. A drag on a gizmo is handled by TransformControls.
   canvas.addEventListener('pointerdown', event => {
-    if (event.pointerType === 'touch' && editing() && !busy && mode.value !== 'object') {
+    if (event.pointerType === 'touch' && editing() && !busy && !['off','object'].includes(mode.value)) {
       componentTouches.add(event.pointerId);
       controls.enabled = false;
     }
@@ -503,19 +503,20 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     if (!event.isPrimary) {
       pendingTap = undefined;
       componentTouches.delete(event.pointerId);
-      controls.enabled = componentTouches.size === 0;
+      controls.enabled = componentTouches.size === 0 && !interaction;
       if (interaction || componentTouches.size) event.stopImmediatePropagation();
       return;
     }
     const start = pendingTap;
     pendingTap = undefined;
     if (event.pointerType === 'touch') componentTouches.delete(event.pointerId);
-    controls.enabled = componentTouches.size === 0;
     if (componentTouches.size) {
+      controls.enabled = false;
       event.stopImmediatePropagation();
       return;
     }
     if (interaction) return;
+    controls.enabled = true;
     if (!start || start.id !== event.pointerId || !editing()) return;
     try {
       const dx = event.clientX - start.x, dy = event.clientY - start.y;
@@ -599,7 +600,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
   gizmo.addEventListener('mouseUp', () => finishTransform(false));
   canvas.addEventListener('pointercancel', event => {
     if (event.pointerType === 'touch') componentTouches.delete(event.pointerId);
-    controls.enabled = componentTouches.size === 0;
+    controls.enabled = componentTouches.size === 0 && !interaction;
     if (!event.isPrimary) {
       pendingTap = undefined;
       if (interaction || componentTouches.size) event.stopImmediatePropagation();
