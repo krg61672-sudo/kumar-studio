@@ -770,7 +770,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
       for (let c=0;c<8;c++) {
         const [dx,dy,dz]=cubeOffsets[c];
         corners[c].set(origin.x+(x+dx)*step,origin.y+(y+dy)*step,origin.z+(z+dz)*step);
-        values[c]=fieldValues[index(x+dx,y+dy,z+dz)];
+        values[c]=fieldValues[index(x+dx,y+dy,z+dz)]+step*1e-3;
       }
       for (const tetra of tetrahedra) {
         const ins=tetra.filter(i=>values[i]<0), outs=tetra.filter(i=>values[i]>=0);
