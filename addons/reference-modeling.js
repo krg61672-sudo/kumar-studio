@@ -226,7 +226,7 @@ meshEdit.innerHTML=`<h4>Advanced Sculpt Mode</h4>
 <label>Brush action <select id="refBrushMode"><option value="grab">Grab / Stretch (drag any direction)</option><option value="inflate">Pull Out (raise surface)</option><option value="deflate">Push In (dent surface)</option><option value="smooth">Smooth</option><option value="flatten">Flatten</option><option value="pinch">Pinch</option><option value="crease">Crease</option><option value="clay">Clay</option><option value="draw">Draw</option><option value="scrape">Scrape</option><option value="fill">Fill</option><option value="snake">Snake Hook</option><option value="mask">Paint Mask</option><option value="unmask">Erase Mask</option></select></label>
 <label>Brush size <input id="refBrushRadius" type="range" min="5" max="100" value="38"></label>
 <label>Brush strength <input id="refBrushStrength" type="range" min="5" max="100" value="60"></label>
-<label><input id="refPressure" type="checkbox" checked> Pen pressure strength</label><button id="refMaskClear" type="button">Clear sculpt mask</button><label><input id="refMaskShow" type="checkbox" checked> Show mask</label><button id="refMaskInvert" type="button">Invert mask</button><button id="refDetailUp" type="button">Subdivide mesh ×4</button><label>Falloff <select id="refFalloff"><option value="smooth">Smooth</option><option value="linear">Linear</option><option value="sharp">Sharp</option></select></label><label><input id="refMirror" type="checkbox"> Mirror X</label><label><input id="refMirrorY" type="checkbox"> Mirror Y</label><label><input id="refMirrorZ" type="checkbox"> Mirror Z</label>
+<label><input id="refPressure" type="checkbox" checked> Pen pressure strength</label><button id="refMaskClear" type="button">Clear sculpt mask</button><label><input id="refMaskShow" type="checkbox" checked> Show mask</label><button id="refMaskInvert" type="button">Invert mask</button><label><input id="refAutoDetail" type="checkbox"> Auto detail refinement (experimental)</label><button id="refDetailUp" type="button">Subdivide mesh ×4</button><label>Falloff <select id="refFalloff"><option value="smooth">Smooth</option><option value="linear">Linear</option><option value="sharp">Sharp</option></select></label><label><input id="refMirror" type="checkbox"> Mirror X</label><label><input id="refMirrorY" type="checkbox"> Mirror Y</label><label><input id="refMirrorZ" type="checkbox"> Mirror Z</label>
 <p>Choose a shape, enable sculpt, then drag your finger anywhere on its surface. Grab stretches freely; Pull Out and Push In raise or indent the touched area. Switch off sculpt to orbit the camera.</p>
 <div class="refButtons"><button id="refUndoVertex" type="button">Undo Last Stroke</button><button id="refSmooth" type="button">Smooth Mesh</button></div>
 <p id="refEditStatus" aria-live="polite">Select a shape and enable finger sculpt.</p>`;
@@ -313,7 +313,18 @@ function applyStroke(e){
 }
 canvas.addEventListener('pointerdown',e=>{
  if(!$('refEditOn').checked||(e.pointerType==='mouse'&&e.button!==0)||!edit.active()||!e.isPrimary)return;
- const hit=edit.brushAt(e.clientX,e.clientY);if(!hit)return;
+ let hit=edit.brushAt(e.clientX,e.clientY);if(!hit)return;
+ if($('refAutoDetail').checked){
+ const m=edit.active(),g=m.geometry,a=g.attributes.position;
+ if(!m.isSkinnedMesh&&!g.morphAttributes.position?.length&&!sculptMasks.has(g)&&a.count<12000){
+ const idx=g.index,n=idx?idx.count:a.count;let refine=false;
+ for(let i=0;i<n;i+=3){
+ const p=[0,1,2].map(k=>{const j=idx?idx.getX(i+k):i+k;return [a.getX(j),a.getY(j),a.getZ(j)];});
+ if(p.some(v=>Math.hypot(...v.map((x,k)=>x-hit.local[k]))<.15)&&p.some((v,j)=>Math.hypot(...v.map((x,k)=>x-p[(j+1)%3][k]))>.06)){refine=true;break;}
+ }
+ if(refine&&edit.subdivideTriangles()){deformCache.delete(m);hit=edit.brushAt(e.clientX,e.clientY)||hit;}
+ }
+ }
  e.preventDefault();e.stopImmediatePropagation();
  const mesh=edit.active();
  gesture={pointer:e.pointerId,center:hit.local,world:hit.world,normal:hit.normal,x:e.clientX,y:e.clientY,mesh};
