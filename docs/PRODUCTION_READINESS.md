@@ -83,6 +83,14 @@ node tests/virtual-controls.cjs landscape
 
 The runner accepts alternative paths through `KUMAR_QA_DEPS`, `KUMAR_QA_ASSETS` and `KUMAR_QA_CHROMIUM`.
 
+## Voxel Remesh QA — 2026-11-28
+
+**GREEN for the tested case:** Chromium 158.0.8127.0, desktop software-WebGL viewport, editable Three.js sphere at resolution 24. The browser workflow exercised the UI action on actual geometry and verified 7,926 vertices, 15,848 triangles, finite coordinates, no degenerate triangles, zero boundary edges and zero overused edges. Voxel Remesh Undo restored the source sphere topology; Redo restored the remeshed topology. The same desktop run passed Bevel, Loop Cut, Knife, quad retopology, Boolean Union, MakeHuman rig creation, weapon grip controls, motion playback and sequencer scrubbing.
+
+The signed-distance classification uses parity votes from X/Y/Z rays to handle tangent-ray cases, then extracts the surface with marching tetrahedra. Browser evidence: [QA run](https://github.com/krg61672-sudo/kumar-studio/actions/runs/46158271323), source commit `3546d0d`.
+
+**Scope and limits:** The current operation requires a closed manifold input, caps the sample grid at 260,000 points, offers resolutions 24–56, and does not preserve UV coordinates. This test covers a sphere in software WebGL; detailed human meshes and actual Android/iPad hardware remain unverified for this tool. The wider Studio is still not production-ready.
+
 ## Extended rig, export and dense-mesh QA
 
 The extended browser runner uses the official MakeHuman mesh and its 163-joint skeleton. Coordinates are in Studio world units.
