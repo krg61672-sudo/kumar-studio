@@ -327,11 +327,16 @@ renderer.setAnimationLoop(()=>`),
       for(let i=0;i<index.length;i+=3){
         const tri=[index[i],index[i+1],index[i+2]];
         if(new Set(tri).size!==3)throw Error('Voxel remesh produced a degenerate triangle');
-        for(let j=0;j<3;j++){const a=tri[j],b=tri[(j+1)%3],key=a<b?a+':'+b:b+':'+a;edges.set(key,(edges.get(key)||0)+1);}
+        for(let j=0;j<3;j++){
+          const a=tri[j],b=tri[(j+1)%3],key=a<b?a+':'+b:b+':'+a,item=edges.get(key);
+          if(item)item.count++;
+          else edges.set(key,{count:1,a:[p.getX(a),p.getY(a),p.getZ(a)],b:[p.getX(b),p.getY(b),p.getZ(b)]});
+        }
       }
-      const edgeCounts=[...edges.values()];
+      const edgeCounts=[...edges.values()].map(edge=>edge.count);
       return {vertices:p.count,triangles:index.length/3,watertight:edgeCounts.every(count=>count===2),
         boundaryEdges:edgeCounts.filter(count=>count===1).length,overusedEdges:edgeCounts.filter(count=>count>2).length,
+        boundarySamples:[...edges.values()].filter(edge=>edge.count===1).slice(0,12).map(({a,b})=>[a,b]),
         min,max,finite:Array.from(p.array).every(Number.isFinite)};
     });
     assert.ok(voxel.vertices>100&&voxel.triangles>100,voxel);
