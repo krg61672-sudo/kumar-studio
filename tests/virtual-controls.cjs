@@ -310,6 +310,33 @@ renderer.setAnimationLoop(()=>`),
     await op('Boolean union');
     assert.equal(await page.evaluate(()=>KumarShapeBridge.list().length),1);
     console.log('Bevel, Loop Cut, Knife, quad retopology and Boolean Union regression passed');
+    await add('sphere');await look('object');
+    const voxelButton=id('ksVoxelRemesh');
+    await voxelButton.evaluate(el=>el.closest('details').open=true);
+    await id('ksVoxelResolution').selectOption('24');
+    await voxelButton.click();
+    await page.waitForFunction(()=>/Voxel Remesh created/.test(document.getElementById('ksComponentStatus').textContent),
+      null,{timeout:30000});
+    const voxel=await page.evaluate(()=>{
+      const geometry=KumarShapeBridge.edit.active().geometry,p=geometry.attributes.position,index=geometry.index.array;
+      const edges=new Map(),min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];
+      for(let i=0;i<p.count;i++)for(let a=0;a<3;a++){
+        const v=p.getX(i);const value=a===0?v:a===1?p.getY(i):p.getZ(i);
+        min[a]=Math.min(min[a],value);max[a]=Math.max(max[a],value);
+      }
+      for(let i=0;i<index.length;i+=3){
+        const tri=[index[i],index[i+1],index[i+2]];
+        if(new Set(tri).size!==3)throw Error('Voxel remesh produced a degenerate triangle');
+        for(let j=0;j<3;j++){const a=tri[j],b=tri[(j+1)%3],key=a<b?a+':'+b:b+':'+a;edges.set(key,(edges.get(key)||0)+1);}
+      }
+      return {vertices:p.count,triangles:index.length/3,watertight:[...edges.values()].every(count=>count===2),min,max,
+        finite:Array.from(p.array).every(Number.isFinite)};
+    });
+    assert.ok(voxel.vertices>100&&voxel.triangles>100,voxel);
+    assert.ok(voxel.watertight,voxel);
+    assert.ok(voxel.finite,voxel);
+    assert.ok(voxel.max.every((v,i)=>v-voxel.min[i]>.25),voxel);
+    console.log('Voxel Remesh passed on a real editable sphere:',voxel);
     await page.getByRole('button',{name:'Rigging',exact:true}).click();
     await id('buildRig').evaluate(el=>el.onclick());
     const haveRig=await page.evaluate(()=>{
