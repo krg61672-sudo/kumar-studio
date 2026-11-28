@@ -1,0 +1,28 @@
+name: Touch edit browser QA
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'addons/modeling-tools.js'
+      - 'addons/virtual-controls.js'
+      - 'addons/professional-shell.js'
+      - 'studio-v5.0.html'
+      - 'tests/virtual-controls.cjs'
+      - '.github/workflows/touch-edit-qa.yml'
+permissions:
+  contents: read
+jobs:
+  phone-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser QA dependencies
+        run: npm install --prefix /tmp/ks-deps three@0.160.0 three-mesh-bvh@0.7.6 manifold-3d@3.5.5 playwright-core @sparticuz/chromium
+      - name: Run touch editing and virtual controls in software WebGL
+        env:
+          KUMAR_QA_DEPS: /tmp/ks-deps
+        run: node tests/virtual-controls.cjs phone
