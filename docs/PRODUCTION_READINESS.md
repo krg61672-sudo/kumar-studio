@@ -39,3 +39,40 @@ Call the studio **complete** only after all required tests pass on the actual ri
 - **Animation authoring:** manual and automatic keyframing, editable timeline, action sequencer, interpolation, transition blending, IK, mocap, audio/dialogue synchronization.
 - **Review controls:** preview/apply/reject, undo/redo and reliable saved projects.
 - Blocked performances must remain editable and transfer to the final rig without replacing the character identity or resetting scene coordinates.
+
+## V6.0 virtual controls QA
+
+The three panels start disabled independently. The settings button in the Studio header opens their activation, sensitivity and appearance controls. Object and component edits use the Studio geometry history. The viewport grants an active edit gesture priority over competing gestures on that surface.
+
+The [browser runner](../tests/virtual-controls.cjs) checks the Studio UI in Chromium using its actual WebGL canvas, editable BoxGeometry meshes, and the official MakeHuman mesh, skeleton and weights. Camera coordinates, mesh positions and vertices, emitted mouse events, pose changes and saved settings are asserted directly. The runner uses locally cached copies of the published Three.js dependencies and MakeHuman assets to make repeated runs independent of network timing.
+
+| Workflow | Status | Evidence |
+|---|---|---|
+| Virtual mouse | PASS | Cursor tracking, left selection, middle and right events, Studio context menu, double-click, wheel, zoom, Ctrl/Shift/Alt events, precision and boost, component multi-selection and drag-lock sculpting |
+| Left joystick | PASS | Orbit, pan and zoom changed the expected camera state. The state stopped changing after release. |
+| Right joystick and modeling | PASS | Object Move, Rotate and Scale changed separate properties. X-locked vertex movement touched only X coordinates. A single Undo/Redo restored each geometry state. The dead zone prevented movement. |
+| Touch coexistence | PASS | Native touch still navigated the viewport. The runner exercised both joysticks and the mouse touchpad together and held virtual left-click while moving the pad. |
+| Rigging and animation | PARTIAL | MakeHuman rig creation, joint rotation, character positioning, weapon-grip control, Walk playback and action-sequencer scrubbing passed on desktop. Other capture and animation workflows remain open in the release audit. |
+| Sensitivity and customization | PASS | All 14 sliders were changed and checked against storage. Precision, boost, dead zone and three presets were exercised. Independent activation, handedness, size, opacity, panel drag, minimize, reload persistence and default reset were checked. |
+| Geometry regression | PASS | Bevel, Loop Cut, multi-point Knife, automatic quad retopology and Boolean Union ran in the existing desktop workspace. |
+| Browser and performance coverage | PARTIAL | Desktop, phone portrait, tablet portrait and phone landscape were exercised in Chromium with software WebGL. This runner records JavaScript heap usage and an idle frame sample. Dense scene, GPU memory and long-session profiling remain open. |
+| Physical device and browser engine coverage | NOT TESTED | iPad Air 4 Safari, Realme 11x Android hardware, and non-Chromium desktop engines. |
+| Complete Studio release audit | PARTIAL | The focused regression checks above passed. The remaining production readiness gates in this document remain open. |
+
+The virtual pointer sends events inside the Studio. Its context menu is Studio-specific. Browser-level actions such as operating system dialogs are outside the pointer test coverage.
+
+### Reproducing the browser checks
+
+```sh
+npm install --prefix /tmp/ks-deps three@0.160.0 three-mesh-bvh@0.7.6 manifold-3d@3.5.5 playwright-core @sparticuz/chromium
+asset_root=https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data
+curl -fsSL "$asset_root/3dobjs/base.obj" -o /tmp/ks-base.obj
+curl -fsSL "$asset_root/rigs/default.mhskel" -o /tmp/ks-default.mhskel
+curl -fsSL "$asset_root/rigs/default_weights.mhw" -o /tmp/ks-default_weights.mhw
+node tests/virtual-controls.cjs
+node tests/virtual-controls.cjs phone
+node tests/virtual-controls.cjs tablet
+node tests/virtual-controls.cjs landscape
+```
+
+The runner accepts alternative paths through `KUMAR_QA_DEPS`, `KUMAR_QA_ASSETS` and `KUMAR_QA_CHROMIUM`.

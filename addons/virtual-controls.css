@@ -1,0 +1,60 @@
+.ks-virtual, #ksVirtualSettings, #ksVirtualMenu {
+  color: #eeebf9; background: #1a1c29; border: 1px solid #62518a;
+  border-radius: 10px; font: 13px system-ui, sans-serif; box-sizing: border-box;
+}
+.ks-virtual {
+  position: fixed; z-index: 32; display: grid; gap: 4px; padding: 5px;
+  width: min(var(--control-width), calc(100vw - 12px)); box-shadow: 0 4px 12px #0006;
+}
+.ks-virtual[hidden], .ks-virtual [hidden], #ksVirtualSettings[hidden], #ksVirtualMenu[hidden],
+#ksVirtualCursor[hidden] { display: none !important; }
+.ks-virtual header {
+  display: flex; align-items: center; gap: 4px;
+  height: auto; padding: 0; background: transparent; color: inherit; font: inherit;
+}
+.ks-virtual button, #ksVirtualSettings button, #ksVirtualMenu button, .ks-virtual select {
+  background: #29263a; color: inherit; border: 1px solid #5d5075; border-radius: 6px;
+  min-height: 36px; padding: 3px 5px; margin: 0; width: auto; font: inherit;
+}
+.ks-virtual button { touch-action: manipulation; }
+.ks-virtual button[aria-pressed="true"], #ksVirtualSettings button[aria-pressed="true"] {
+  background: #644799;
+}
+.ks-virtual header button:first-child { flex: 1; text-align: left; touch-action: none; cursor: grab; }
+.ks-virtual .ks-virtual-row { display: flex; gap: 3px; flex-wrap: wrap; }
+.ks-virtual .ks-virtual-row > * { flex: 1; }
+.ks-virtual select { width: 100%; }
+.ks-virtual .ks-pad {
+  touch-action: none; user-select: none; background: #222031; border: 1px solid #675583;
+  height: clamp(44px, 12vh, 100px); border-radius: 8px; display: grid; place-items: center;
+}
+.ks-virtual .ks-stick { height: min(85px, 19vh); position: relative; }
+.ks-virtual .ks-stick span {
+  border: 1px solid #b697ec; background: #5a4086; border-radius: 100%;
+  width: 30px; height: 30px; pointer-events: none; box-shadow: 0 0 0 7px #563a7c40;
+}
+#ksVirtualSettings {
+  position: fixed; z-index: 36; right: 8px; top: 55px;
+  width: min(330px, calc(100vw - 16px)); max-height: calc(100dvh - 64px);
+  overflow: auto; padding: 10px; overscroll-behavior: contain;
+}
+#ksVirtualSettings h2 { margin: 0; font-size: 16px; }
+#ksVirtualSettings label { display: flex; justify-content: space-between; align-items: center; min-height: 32px; gap: 8px; }
+#ksVirtualSettings input[type="range"] { width: 43%; accent-color: #b597ec; }
+#ksVirtualSettings details { padding: 6px 0; border-bottom: 1px solid #393246; }
+#ksVirtualCursor { position: fixed; z-index: 39; pointer-events: none; left: 0; top: 0; width: 24px; height: 24px; }
+#ksVirtualCursor::after {
+  content: ''; display: block; width: 16px; height: 20px; background: #ffe89c;
+  filter: drop-shadow(1px 1px 1px #000); clip-path: polygon(0 0,100% 62%,49% 65%,31% 100%);
+}
+#ksVirtualCursor[data-precision]::after {
+  width: 17px; height: 17px; margin: -8px; background: #ffe89c;
+  clip-path: polygon(0 43%,43% 43%,43% 0,57% 0,57% 43%,100% 43%,100% 57%,57% 57%,57% 100%,43% 100%,43% 57%,0 57%);
+}
+#ksVirtualMenu { position: fixed; z-index: 38; max-height: 55dvh; overflow: auto; padding: 4px; }
+#ksVirtualMenu button { display: block; width: 100%; text-align: left; }
+@media(max-height:500px) {
+  .ks-virtual { max-height: calc(100dvh - 12px); overflow: auto; }
+  .ks-virtual .ks-pad { height: 46px; }
+  .ks-virtual button, .ks-virtual select { min-height: 30px; }
+}

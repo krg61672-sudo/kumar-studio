@@ -83,6 +83,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
   canvas.parentElement.append(knifeOverlay);
   let selection, interaction, pendingTap, knifeDrag, retopoMesh, lastLoop;
   let knifePoints = [], knifeHover;
+  const selectedObjects = new Set();
   const surfaceTrees = new WeakMap();
   let retopoPoints = [];
   let busy = false;
@@ -109,6 +110,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     for (const item of [...markers.children]) {
       markers.remove(item);
       if (item.isLine) item.geometry.dispose();
+      if (item.userData.objectOutline) item.material.dispose();
     }
   }
 
@@ -124,6 +126,13 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     const selected = current();
     if (!editing()) return;
     retopoPoints.forEach(addMarker);
+    if (mode.value==='object' && selectedObjects.size>1) {
+      for (const mesh of selectedObjects) {
+        const outline=new THREE.Box3Helper(new THREE.Box3().setFromObject(mesh),0xffce63);
+        outline.userData.objectOutline=true;
+        markers.add(outline);
+      }
+    }
     if (!selected) return;
     const {mesh, corners, edges} = selected;
     if (mode.value === 'vertex') corners.forEach(v => addMarker(mesh.localToWorld(v.p.clone())));
@@ -156,6 +165,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
 
   function resetSelection() {
     selection = undefined;
+    selectedObjects.clear();
     clearKnife();
     retopoPoints = [];
     retopoMesh = undefined;
@@ -204,7 +214,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     return ray;
   }
 
-  function chooseComponent(mesh, hit) {
+  function chooseComponent(mesh, hit, additive) {
     const geometry = mesh.geometry;
     const faces = readMesh(geometry), adjacency = topology(faces);
     const first = hit.faceIndex;
@@ -217,7 +227,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     if (mode.value === 'vertex') {
       corners = [faces[first].reduce((a, b) => a.p.distanceToSquared(point) <
         b.p.distanceToSquared(point) ? a : b)];
-      if (section.querySelector('#ksComponentAccumulate').checked && current()) {
+      if ((additive || section.querySelector('#ksComponentAccumulate').checked) && current()) {
         const previous = current().corners;
         const included = previous.some(v => v.p.distanceToSquared(corners[0].p) < 1e-12);
         corners = included ? previous.filter(v => v.p.distanceToSquared(corners[0].p) >= 1e-12) :
@@ -235,6 +245,26 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     if (!corners.length) throw Error('The selected region has no editable boundary.');
     if (mode.value === 'polygon') {
       corners = [...new Map([...region].flatMap(f => faces[f]).map(v => [v.p.toArray().join(','), v])).values()];
+    }
+    const previous=additive && current();
+    if (previous && mode.value==='edge') {
+      const clicked=edges[0];
+      edges=previous.edges.some(edge=>edge.key===clicked.key)?
+        previous.edges.filter(edge=>edge.key!==clicked.key):[...previous.edges,clicked];
+      corners=[...new Map(edges.flatMap(({a,b})=>[a,b]).map(v=>[v.p.toArray().join(','),v])).values()];
+    }
+    if (previous && ['face','polygon'].includes(mode.value)) {
+      for (const index of previous.region) {
+        if (region.has(index)) region.delete(index);
+        else region.add(index);
+      }
+      edges=boundaryEdges(adjacency,region);
+      corners=[...new Map([...region].flatMap(f=>faces[f]).map(v=>[v.p.toArray().join(','),v])).values()];
+    }
+    if (!corners.length) {
+      resetSelection();
+      report('Selection cleared.');
+      return;
     }
     selection = {mesh, geometry, faces, adjacency, region, corners, edges};
     report(mode.selectedOptions[0].textContent + ' selected.');
@@ -259,15 +289,24 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     resetSelection();
   }
 
-  function tap(x, y) {
+  function tap(x, y, additive) {
     if (mode.value === 'object') {
       const objects = group.children.filter(mesh => mesh.visible);
       const hit = rayAt(x, y).intersectObjects(objects, false)[0];
       if (!hit) return;
+      const batch=new Set(additive?(selectedObjects.size?[...selectedObjects]:
+        active()?[active()]:[]):[]);
+      if (additive && batch.has(hit.object)) batch.delete(hit.object);
+      else batch.add(hit.object);
+      const next=batch.has(hit.object)?hit.object:[...batch].at(-1);
       const select = document.getElementById('refBlocks');
-      select.value = String(group.children.indexOf(hit.object));
+      select.value = next?String(group.children.indexOf(next)):'';
       select.dispatchEvent(new Event('change', {bubbles: true}));
-      report('Object selected.');
+      if (!next) bridge.select(-1);
+      selectedObjects.clear();
+      for (const mesh of batch) selectedObjects.add(mesh);
+      drawSelection();
+      report(batch.size>1?batch.size+' objects selected.':next?'Object selected.':'Selection cleared.');
       return;
     }
     const mesh = active();
@@ -297,7 +336,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
       report(retopoPoints.length + ' surface points. Create a face with 3 or 4 points.');
       return;
     }
-    chooseComponent(mesh, hit);
+    chooseComponent(mesh, hit, additive);
   }
 
   function projectToViewport(matrix, width, height, local) {
@@ -436,7 +475,8 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
       return;
     }
     if (!editing() || busy || ['off','knife'].includes(mode.value) || event.button !== 0) return;
-    if (gizmo.enabled) {
+    const additive=event.ctrlKey||event.shiftKey||event.metaKey;
+    if (gizmo.enabled && !additive) {
       const rect = canvas.getBoundingClientRect();
       gizmo.pointerHover({x: (event.clientX - rect.left) / rect.width * 2 - 1,
         y: 1 - (event.clientY - rect.top) / rect.height * 2, button: -1});
@@ -450,7 +490,8 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
       controls.enabled = false;
     }
     // TransformControls updates its axis for touch before firing mouseDown.
-    pendingTap = {id: event.pointerId, x: event.clientX, y: event.clientY};
+    pendingTap = {id: event.pointerId, x: event.clientX, y: event.clientY, additive};
+    if (additive) event.stopImmediatePropagation();
   }, true);
   canvas.addEventListener('pointermove', event => {
     if (interaction && !event.isPrimary) event.stopImmediatePropagation();
@@ -467,7 +508,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     if (!start || start.id !== event.pointerId || !editing()) return;
     try {
       const dx = event.clientX - start.x, dy = event.clientY - start.y;
-      if (Math.hypot(dx, dy) <= 8) tap(event.clientX, event.clientY);
+      if (Math.hypot(dx, dy) <= 8) tap(event.clientX, event.clientY,start.additive);
       else if (current() && section.querySelector('#ksComponentDrag').checked) {
         const selected = current();
         const world = selected.mesh.localToWorld(selected.corners[0].p.clone());
@@ -563,7 +604,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
 
   function selectedEdge() {
     const selected = current();
-    if (!selected || mode.value !== 'edge') throw Error('Select an edge first.');
+    if (!selected || mode.value !== 'edge' || selected.edges.length!==1) throw Error('Select a single edge first.');
     return selected;
   }
 
@@ -943,4 +984,80 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
       if (!bridge[kind]()) throw Error('No more geometry history.');
     });
   }
+
+  return {startTransform(kind,axis){
+    const mesh=active(), component=current(), originalMode=mode.value;
+    if (!editing() || busy || interaction || !mesh?.visible ||
+        (!component && originalMode!=='object')) {
+      throw Error('Select an object or mesh component in Modeling first.');
+    }
+    if (component && kind!=='move' && component.corners.length<2) {
+      throw Error('Rotation and scale need at least two vertices.');
+    }
+    const objects=!component && selectedObjects.has(mesh)?[...selectedObjects]:[mesh];
+    const geometry=mesh.geometry, attr=geometry.attributes.position;
+    const point=new THREE.Vector3(), vector=new THREE.Vector3();
+    const center=new THREE.Vector3(), indices=[];
+    if (component) {
+      const keys=new Set(component.corners.map(v=>v.p.toArray().join(',')));
+      for (const {p} of component.corners) center.add(p);
+      center.divideScalar(component.corners.length);
+      for(let i=0;i<attr.count;i++){
+        point.fromBufferAttribute(attr,i);
+        if(keys.has(point.toArray().join(','))) indices.push(i);
+      }
+    }
+    const basis={
+      x:new THREE.Vector3(1,0,0),y:new THREE.Vector3(0,1,0),z:new THREE.Vector3(0,0,1)
+    };
+    let changed=false, elapsed=0;
+    return {
+      apply(horizontal,vertical,dt){
+        if (!editing() || busy || active()!==mesh || mesh.geometry!==geometry || mode.value!==originalMode ||
+            objects.some(object=>!group.children.includes(object))) return false;
+        const scalar=axis==='y'?-vertical:horizontal;
+        if(axis==='free') vector.set(horizontal,-vertical,0);
+        else vector.copy(basis[axis]).multiplyScalar(scalar);
+        if (kind==='move' ? vector.lengthSq()<1e-10 : Math.abs(scalar)<1e-6) return true;
+        if (!changed) {saveHistory();changed=true;}
+        const amount=scalar*dt;
+        const rotationAxis=basis[axis==='free'?'y':axis];
+        if (!component) {
+          for (const object of objects) {
+            if(kind==='move')object.position.addScaledVector(vector,dt*.8);
+            else if(kind==='rotate')object.rotateOnAxis(rotationAxis,amount*1.8);
+            else if(axis==='free')object.scale.multiplyScalar(Math.exp(amount)).clampScalar(.01,100);
+            else object.scale[axis]=THREE.MathUtils.clamp(object.scale[axis]*Math.exp(amount),.01,100);
+          }
+          return true;
+        }
+        for(const i of indices){
+          point.fromBufferAttribute(attr,i);
+          if(kind==='move')point.addScaledVector(vector,dt*.35);
+          else {
+            point.sub(center);
+            if(kind==='rotate') point.applyAxisAngle(rotationAxis,amount*1.8);
+            else if(axis==='free') point.multiplyScalar(Math.exp(amount));
+            else point[axis]*=Math.exp(amount);
+            point.add(center);
+          }
+          attr.setXYZ(i,point.x,point.y,point.z);
+        }
+        attr.needsUpdate=true;
+        elapsed+=dt;
+        if(elapsed>=.06){geometry.computeVertexNormals();elapsed=0;}
+        return true;
+      },
+      end(){
+        if (!changed || !group.children.includes(mesh) || mesh.geometry!==geometry) return;
+        if(component){
+          geometry.computeVertexNormals();geometry.computeBoundingBox();geometry.computeBoundingSphere();
+          resetSelection();
+        } else drawSelection();
+        document.dispatchEvent(new Event('ks-modeling-geometry'));
+        report('Joystick transform applied.');
+      }
+    };
+  }};
+
 }
