@@ -100,9 +100,6 @@ function selectControl(parent,label,entries,value,change) {
 export function mountVirtualControls({canvas,camera,controls,bridge,modeling,hasRig}) {
   const header=document.querySelector('.ks-header-actions');
   if (!header || !modeling) return;
-  const stylesheet=document.createElement('link');
-  stylesheet.rel='stylesheet'; stylesheet.href=new URL('virtual-controls.css',import.meta.url);
-  document.head.append(stylesheet);
   let settings=loadSettings();
   const widgets={}, formFields={}, livePointers=new Set(), modifiers={ctrlKey:false,shiftKey:false,altKey:false};
   let x=0,y=0,initialized=false,held=null,padPointer=null,dragLock=false;
