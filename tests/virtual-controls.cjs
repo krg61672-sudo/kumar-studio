@@ -19,7 +19,7 @@ const extended=process.env.KUMAR_QA_EXTENDED==='1';
  try{
   const sizes={phone:[412,915],tablet:[820,1180],landscape:[915,412],desktop:[1480,1000]};
   const [width,height]=sizes[device||'desktop'];
-  const touch=!!device;
+  const touch=!!device && device!=='desktop';
   const page=await browser.newPage({viewport:{width,height},hasTouch:touch,isMobile:touch});
   const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.log('ERROR',e.message);});
   await page.route('https://cdn.jsdelivr.net/npm/**',route=>{
