@@ -42,9 +42,9 @@ Call the studio **complete** only after all required tests pass on the actual ri
 
 ## Touch component-edit camera lock — 2026-11-28
 
-**Status: PARTIAL / YELLOW.** The modeling editor now tracks active touch pointers while a component-edit tool is selected and keeps OrbitControls disabled until those pointers end or cancel. Object-mode touch navigation and the separate Advanced Sculpt stroke handler are unchanged. The phone-browser regression case in [virtual-controls.cjs](../tests/virtual-controls.cjs) checks that a finger drag with “Drag component in camera plane” off leaves camera position unchanged before and after pointer release.
+**Status: GREEN for the automated phone-size Chromium test; physical-device coverage remains YELLOW.** The modeling editor tracks active touch pointers while a component-edit tool is selected and keeps OrbitControls disabled until those pointers end or cancel. Object-mode touch navigation and the separate Advanced Sculpt stroke handler are unchanged. The phone-browser regression case in [virtual-controls.cjs](../tests/virtual-controls.cjs) asserts that a finger drag with “Drag component in camera plane” off leaves the camera unchanged before and after pointer release.
 
-The changed JavaScript and regression test pass syntax checks. The interactive case has **not** been executed in this environment: the installed `/usr/bin/chromium` wrapper points to a missing `/usr/lib/chromium/chromium` binary, and the available cloud browser refuses WebGL contexts. Do not mark the touch camera fix GREEN until the phone runner passes with software WebGL or it is checked on a real Android/iPad browser.
+The focused regression and existing virtual-controls suite passed with software WebGL in GitHub Actions: [phone-browser run](https://github.com/krg61672-sudo/kumar-studio/actions/runs/46154655073), commit `6a9856f`. JavaScript syntax checks also passed. This does not replace testing on the Realme 11x or iPad Air 4.
 
 ## V6.0 virtual controls QA
 
