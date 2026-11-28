@@ -712,33 +712,56 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     const total = nx*ny*nz;
     if (total > 260000) throw Error('Reduce voxel resolution for this mesh size.');
     const fieldValues = new Float32Array(total);
+    const insideVotes = new Uint8Array(total);
+    const dimensions=[nx,ny,nz];
     const index = (x,y,z) => (z*ny+y)*nx+x;
     const ray = new THREE.Ray(new THREE.Vector3(),new THREE.Vector3(1,0,0));
     const target = {};
     const hitXs = [];
     const distinctHits = [];
+    const coordinates=[0,0,0];
+    for (let axis=0;axis<3;axis++) {
+      const [first,second]=[0,1,2].filter(value=>value!==axis);
+      ray.direction.set(0,0,0).setComponent(axis,1);
+      for (let a=0;a<dimensions[first];a++) for (let b=0;b<dimensions[second];b++) {
+        coordinates[axis]=0;coordinates[first]=a;coordinates[second]=b;
+        ray.origin.set(origin.x+coordinates[0]*step,origin.y+coordinates[1]*step,
+          origin.z+coordinates[2]*step);
+        hitXs.length=0;
+        for (const hit of tree.raycast(ray,THREE.DoubleSide,0,dimensions[axis]*step)) {
+          hitXs.push(hit.point.getComponent(axis));
+        }
+        hitXs.sort((left,right)=>left-right);
+        distinctHits.length=0;
+        for (const value of hitXs) {
+          if (!distinctHits.length || Math.abs(value-distinctHits[distinctHits.length-1])>step*1e-4) {
+            distinctHits.push(value);
+          }
+        }
+        let crossing=0;
+        for (let k=0;k<dimensions[axis];k++) {
+          const pointAxis=origin.getComponent(axis)+k*step;
+          while (crossing<distinctHits.length && distinctHits[crossing]<=pointAxis+step*1e-5) crossing++;
+          coordinates[axis]=k;
+          if (crossing%2) insideVotes[index(coordinates[0],coordinates[1],coordinates[2])]++;
+        }
+      }
+      report('Voxel Remesh classifying '+['X','Y','Z'][axis]+' rays…');
+      await new Promise(resolve=>requestAnimationFrame(resolve));
+      if (mesh !== active() || original !== mesh.geometry) throw Error('The selected mesh changed.');
+    }
     const point = new THREE.Vector3();
-    let completedRows = 0;
+    let completedRows=0;
     for (let z=0;z<nz;z++) {
       const pz=origin.z+z*step;
       for (let y=0;y<ny;y++) {
         const py=origin.y+y*step;
-        ray.origin.set(origin.x,py,pz);
-        hitXs.length=0;
-        for (const hit of tree.raycast(ray,THREE.DoubleSide,0,nx*step)) hitXs.push(hit.point.x);
-        hitXs.sort((a,b)=>a-b);
-        distinctHits.length=0;
-        for (const x of hitXs) {
-          if (!distinctHits.length || Math.abs(x-distinctHits[distinctHits.length-1])>step*1e-4) distinctHits.push(x);
-        }
-        let crossing=0;
         for (let x=0;x<nx;x++) {
-          const px=origin.x+x*step;
-          while (crossing<distinctHits.length && distinctHits[crossing] <= px+step*1e-5) crossing++;
-          point.set(px,py,pz);
+          point.set(origin.x+x*step,py,pz);
           const nearest=tree.closestPointToPoint(point,target);
           if (!nearest || !Number.isFinite(nearest.distance)) throw Error('Could not evaluate the mesh surface.');
-          fieldValues[index(x,y,z)]=(crossing%2 ? -nearest.distance : nearest.distance);
+          const inside=insideVotes[index(x,y,z)]>=2;
+          fieldValues[index(x,y,z)]=inside?-nearest.distance:nearest.distance;
         }
         completedRows++;
       }
