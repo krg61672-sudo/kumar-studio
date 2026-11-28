@@ -224,7 +224,7 @@ const meshEdit=document.createElement('section');meshEdit.id='refMeshEdit';
 meshEdit.innerHTML=`<h4>Advanced Sculpt Mode</h4>
 <label><input id="refEditOn" type="checkbox"> Enable finger sculpt</label>
 <label>Brush action <select id="refBrushMode"><option value="grab">Grab / Stretch (drag any direction)</option><option value="inflate">Pull Out (raise surface)</option><option value="deflate">Push In (dent surface)</option><option value="smooth">Smooth</option><option value="flatten">Flatten</option><option value="pinch">Pinch</option><option value="crease">Crease</option><option value="clay">Clay</option><option value="draw">Draw</option><option value="scrape">Scrape</option><option value="fill">Fill</option><option value="snake">Snake Hook</option><option value="mask">Paint Mask</option><option value="unmask">Erase Mask</option></select></label>
-<label>Brush size <input id="refBrushRadius" type="range" min="5" max="100" value="38"></label>
+<label>Brush size <input id="refBrushRadius" type="range" min="1" max="100" value="38"></label>
 <label>Brush strength <input id="refBrushStrength" type="range" min="5" max="100" value="60"></label>
 <label><input id="refPressure" type="checkbox" checked> Pen pressure strength</label><button id="refMaskClear" type="button">Clear sculpt mask</button><label><input id="refMaskShow" type="checkbox" checked> Show mask</label><button id="refMaskInvert" type="button">Invert mask</button><label><input id="refAutoDetail" type="checkbox"> Auto detail refinement (experimental)</label><button id="refDetailUp" type="button">Subdivide mesh ×4</button><label>Falloff <select id="refFalloff"><option value="smooth">Smooth</option><option value="linear">Linear</option><option value="sharp">Sharp</option></select></label><label><input id="refMirror" type="checkbox"> Mirror X</label><label><input id="refMirrorY" type="checkbox"> Mirror Y</label><label><input id="refMirrorZ" type="checkbox"> Mirror Z</label>
 <p>Choose a shape, enable sculpt, then drag your finger anywhere on its surface. Grab stretches freely; Pull Out and Push In raise or indent the touched area. Switch off sculpt to orbit the camera.</p>
@@ -262,7 +262,7 @@ function advancedStroke(mode,delta,radius,strength,e){
  const src=Float32Array.from(a.array), c=gesture.center,n=gesture.normal;
  const centers=[{c,n,d:delta}];
  for(const [axis,id] of [[0,'refMirror'],[1,'refMirrorY'],[2,'refMirrorZ']])if($(id).checked&&Math.abs(c[axis])>1e-5){for(const h of centers.slice()){const reflect=v=>v.map((x,k)=>k===axis?-x:x);centers.push({c:reflect(h.c),n:reflect(h.n),d:reflect(h.d)});}}
- const fall=$('refFalloff').value, amount=Math.min(.35,Math.hypot(e.clientX-gesture.x,e.clientY-gesture.y)*.012*strength);
+ const fall=$('refFalloff').value, amount=Math.min(.12,Math.hypot(e.clientX-gesture.x,e.clientY-gesture.y)*.006*strength);
  let changed=false;
  for(const hit of centers){
   let avg=[0,0,0],count=0;
@@ -279,7 +279,7 @@ function advancedStroke(mode,delta,radius,strength,e){
    else if(mode==='pinch'||mode==='crease')move=v.map((x,k)=>-(x-dot*hit.n[k])*amount-(mode==='crease'?hit.n[k]*radius*amount*.3:0));
    else if(mode==='scrape'||mode==='fill')move=[0,0,0];
    else if(mode==='clay'||mode==='draw')move=hit.n.map(x=>x*radius*amount*.25);
-   else move=hit.d.map(x=>x*strength*(mode==='snake'?1.5:1));
+   else {const limit=radius*.12, length=Math.hypot(...hit.d)*strength*(mode==='snake'?1.5:1);move=hit.d.map(x=>x*strength*(mode==='snake'?1.5:1)*Math.min(1,limit/Math.max(length,1e-9)));}
    a.setXYZ(i,a.getX(i)+move[0]*w*(1-mask[i]),a.getY(i)+move[1]*w*(1-mask[i]),a.getZ(i)+move[2]*w*(1-mask[i]));changed=true;
   }
  }
@@ -291,7 +291,8 @@ function applyStroke(e){
  const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;
  if(Math.abs(dx)+Math.abs(dy)<.1)return;
  const mode=$('refBrushMode').value;
- const radius=Number($('refBrushRadius').value)/100*.9+.04;
+ if(!['grab','snake'].includes(mode)){const hit=edit.brushAt(e.clientX,e.clientY);if(!hit){gesture.x=e.clientX;gesture.y=e.clientY;return;}gesture.center=hit.local;gesture.world=hit.world;gesture.normal=hit.normal;}
+ const radius=Math.max(.008,Math.pow(Number($('refBrushRadius').value)/100,1.7)*.94);
  const strength=Number($('refBrushStrength').value)/100*1.8*($('refPressure').checked&&e.pointerType==='pen'?Math.max(.05,e.pressure):1);
  let delta;
  if(mode==='grab'||mode==='snake')delta=edit.screenDeltaToLocal(dx,dy,gesture.world);
@@ -305,7 +306,7 @@ function applyStroke(e){
   bridge.checkpoint();
   gesture.recorded=true;
  }
- if((['smooth','flatten','pinch','crease','clay','draw','scrape','fill','snake','mask','unmask'].includes(mode)||$('refMirrorY').checked||$('refMirrorZ').checked||sculptMasks.has(edit.active()?.geometry)||$('refFalloff').value!=='smooth') ? advancedStroke(mode,delta,radius,strength,e) : edit.brushMove(gesture.center,delta,radius,strength,$('refMirror').checked)){
+ if(advancedStroke(mode,delta,radius,strength,e)){
   gesture.x=e.clientX;gesture.y=e.clientY;
   // Three.js is module-scoped in the main studio, so this addon must not use a global THREE.
   // Keep the original hit point for stable camera-plane drag conversion.
@@ -340,6 +341,8 @@ canvas.addEventListener('pointerup',e=>{
  const mesh=gesture.mesh;endGesture();deformCache.delete(mesh);editStatus('Stroke applied. Undo is available.');
 },true);
 canvas.addEventListener('pointercancel',endGesture,true);
+canvas.addEventListener('lostpointercapture',endGesture,true);
+canvas.addEventListener('contextmenu',e=>{if($('refEditOn').checked)e.preventDefault();},true);
 $('refEditOn').onchange=()=>{endGesture();editStatus($('refEditOn').checked?'Drag directly on your selected shape to sculpt.':'Sculpt off; camera navigation restored.');};
 $('refUndoVertex').textContent='Undo Geometry';
 $('refUndoVertex').onclick=()=>editStatus(bridge.undo()?'Geometry change undone.':'Nothing to undo yet.');
