@@ -465,6 +465,7 @@ renderer.setAnimationLoop(()=>`),
     await page.getByRole('button',{name:'Modeling',exact:true}).click();
     await add('sphere');await look('object');
     const voxelButton=id('ksVoxelRemesh');
+    const sourceTriangles=await page.evaluate(()=>KumarShapeBridge.edit.active().geometry.index.count/3);
     await voxelButton.evaluate(el=>el.closest('details').open=true);
     await id('ksVoxelResolution').selectOption('24');
     await voxelButton.click();
@@ -498,6 +499,11 @@ renderer.setAnimationLoop(()=>`),
     assert.ok(voxel.finite,voxel);
     assert.ok(voxel.max.every((v,i)=>v-voxel.min[i]>.25),voxel);
     console.log('Voxel Remesh passed on a real editable sphere:',voxel);
+    assert.ok(await page.evaluate(()=>KumarShapeBridge.undo()),'Voxel Remesh must support Undo.');
+    assert.equal(await page.evaluate(()=>KumarShapeBridge.edit.active().geometry.index.count/3),sourceTriangles);
+    assert.ok(await page.evaluate(()=>KumarShapeBridge.redo()),'Voxel Remesh must support Redo.');
+    assert.equal(await page.evaluate(()=>KumarShapeBridge.edit.active().geometry.index.count/3),voxel.triangles);
+    console.log('Voxel Remesh Undo/Redo restored source and remeshed topology.');
     await page.evaluate(()=>KumarShapeBridge.clear());
   }
   if(extended) {
