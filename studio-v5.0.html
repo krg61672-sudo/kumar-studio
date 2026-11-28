@@ -279,8 +279,35 @@ function mountViewportSettings(){
  $('ksAxesVisible').onchange=e=>viewportAxes.visible=e.target.checked;
  $('ksTransparentViewport').onchange=e=>{transparentViewport=e.target.checked;viewportBackground(false);};
  opacity();
+ const extra=document.createElement('div');
+ extra.innerHTML='<label><input type="checkbox" id="ksAdaptiveGrid"> Adaptive grid</label><label><input type="checkbox" id="ksMeasure"> Selected object dimensions</label><output id="ksDimensions" style="display:block;white-space:normal;font-size:12px"></output><label><input type="checkbox" id="ksClearWire"> High contrast wire overlay</label>';
+ panel.append(extra);
 }
 mountViewportSettings();
+const measurementBox=new THREE.Box3();
+const measurementHelper=new THREE.Box3Helper(measurementBox,0xffcc66);measurementHelper.visible=false;scene.add(measurementHelper);
+let wireTarget=null,wireOverlay=null,wireVersion=-1,wireSource=null,lastGridSpacing=0.5;
+function updateViewportExtras(){
+ const adaptive=$('ksAdaptiveGrid'),spacing=$('ksGridSpacing');
+ if(adaptive?.checked&&spacing){
+ const distance=camera.position.distanceTo(controls.target);
+ const next=distance<2?0.1:distance<5?0.25:distance<12?0.5:1;
+ if(next!==lastGridSpacing||Number(spacing.value)!==next){spacing.value=String(next);spacing.onchange();lastGridSpacing=next;}
+ }
+ const target=window.KumarShapeBridge?.active?.()||null;
+ const measure=!!$('ksMeasure')?.checked&&!!target;
+ measurementHelper.visible=measure;
+ if(measure){measurementBox.setFromObject(target);const size=measurementBox.getSize(new THREE.Vector3());$('ksDimensions').textContent='World bounds: X '+size.x.toFixed(3)+' · Y '+size.y.toFixed(3)+' · Z '+size.z.toFixed(3)+' units';}
+ else if($('ksDimensions'))$('ksDimensions').textContent='';
+ const wanted=$('ksClearWire')?.checked?target:null;
+ const pos=wanted?.geometry?.attributes?.position;
+ if(wanted!==wireTarget||wanted?.geometry!==wireSource||pos?.version!==wireVersion){
+ if(wireOverlay){wireOverlay.removeFromParent();wireOverlay.geometry.dispose();wireOverlay.material.dispose();wireOverlay=null;}
+ wireTarget=wanted;wireSource=wanted?.geometry;wireVersion=pos?.version;
+ if(wanted&&pos){wireOverlay=new THREE.LineSegments(new THREE.WireframeGeometry(wanted.geometry),new THREE.LineBasicMaterial({color:0xffdf91,transparent:true,opacity:.9,depthTest:false,depthWrite:false}));wireOverlay.renderOrder=20;scene.add(wireOverlay);}
+ }
+ if(wireOverlay&&wanted){wanted.updateWorldMatrix(true,false);wireOverlay.matrixAutoUpdate=false;wireOverlay.matrix.copy(wanted.matrixWorld);wireOverlay.matrixWorldNeedsUpdate=true;}
+}
 
 const material=new THREE.MeshStandardMaterial({
 color:0xd9ad94,
@@ -4141,6 +4168,7 @@ renderer.setAnimationLoop(()=>{if(kumarModelingBlank){if(mesh)mesh.visible=false
 if(blenderMixer)blenderMixer.update(Math.min(.1,blenderClock.getDelta()));else blenderClock.getDelta();
 if(posed&&rigGeneration!==generation)clearRig();
 controls.update();
+updateViewportExtras();
 renderer.render(scene,camera);
 });
 
