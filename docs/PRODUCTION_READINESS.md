@@ -42,9 +42,9 @@ Call the studio **complete** only after all required tests pass on the actual ri
 
 ## Touch component-edit camera lock — 2026-11-28
 
-**Status: GREEN for the automated phone-size Chromium test; physical-device coverage remains YELLOW.** The modeling editor tracks active touch pointers while a component-edit tool is selected and keeps OrbitControls disabled until those pointers end or cancel. Object-mode touch navigation and the separate Advanced Sculpt stroke handler are unchanged. The phone-browser regression case in [virtual-controls.cjs](../tests/virtual-controls.cjs) asserts that a finger drag with “Drag component in camera plane” off leaves the camera unchanged before and after pointer release.
+**Status: GREEN for the automated phone, tablet, landscape and desktop Chromium software-WebGL checks; physical-device coverage remains YELLOW.** The modeling editor tracks active touch pointers while a component-edit tool is selected and keeps OrbitControls disabled until those pointers end or cancel. Object-mode touch navigation and the separate Advanced Sculpt stroke handler are unchanged. The phone-browser regression case in [virtual-controls.cjs](../tests/virtual-controls.cjs) asserts that a finger drag with “Drag component in camera plane” off leaves the camera unchanged before and after pointer release.
 
-The focused regression and existing virtual-controls suite passed with software WebGL in GitHub Actions: [phone-browser run](https://github.com/krg61672-sudo/kumar-studio/actions/runs/46154655073), commit `6a9856f`. JavaScript syntax checks also passed. This does not replace testing on the Realme 11x or iPad Air 4.
+The focused regression and existing virtual-controls suite passed at all four viewport sizes with software WebGL in GitHub Actions: [four-size browser run](https://github.com/krg61672-sudo/kumar-studio/actions/runs/46154791096), commit `f184be9`. The phone, tablet, landscape and desktop runs each reported zero page errors. JavaScript syntax checks also passed. This does not replace testing on the Realme 11x or iPad Air 4.
 
 ## V6.0 virtual controls QA
 
@@ -108,6 +108,11 @@ KUMAR_QA_EXTENDED=1 KUMAR_QA_BLENDER=/usr/bin/blender node tests/virtual-control
 Omit `KUMAR_QA_BLENDER` to check the direct browser export/import path.
 
 ## Natural Movement Quality visual review
+
+### Automated real-rig re-run — 2026-11-28
+
+The software-WebGL Chromium workflow also passed all 22 named motion and hand-pose takes on the actual MakeHuman skinned rig, sampling 25 poses per take and rendering each from four camera angles (front, side, back and three-quarter). The runner's assertions for run support, jump height/landing, and planted feet during sit/stand passed. It captured the frame grids as a [GitHub Actions artifact](https://github.com/krg61672-sudo/kumar-studio/actions/runs/46155075071) (136 MB). This is a successful automated capture/regression run; the full artifact still needs frame-by-frame human review before making broader quality claims. Physical Android/iPad playback remains untested.
+
 
 **Status PARTIAL.** The visual runner renders the actual MakeHuman skinned character and Studio poses into four synchronized cameras. This review included 22 takes at 25 sampled poses per take. Frame grids were inspected from front, side, back and three-quarter views. The evidence uses the same evaluated poses as the Studio timeline, with a temporary neutral material. The recordings are silent, with slowed playback and normalized timeline labels. Static hand presets are held for inspection.
 
