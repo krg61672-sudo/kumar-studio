@@ -54,6 +54,13 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
         <option value="y:1">+Y to −Y</option><option value="y:-1">−Y to +Y</option>
         <option value="z:1">+Z to −Z</option><option value="z:-1">−Z to +Z</option>
       </select></label>
+      <label>Voxel remesh resolution
+        <select id="ksVoxelResolution">
+          <option value="24">Coarse · 24</option><option value="32">Low · 32</option>
+          <option value="40" selected>Medium · 40</option><option value="48">High · 48</option>
+          <option value="56">Fine · 56</option>
+        </select>
+      </label>
       <div data-actions="solids"></div>
     </details>
     <p id="ksComponentStatus" role="status">Add or select an editable mesh.</p>`;
@@ -684,6 +691,111 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     }
   }
 
+  async function voxelRemesh() {
+    const mesh = active(), original = mesh.geometry;
+    const faces = readMesh(original);
+    const edges = topology(faces).edges;
+    if (!faces.length || [...edges.values()].some(edge => edge.length !== 2)) {
+      throw Error('Voxel Remesh needs a closed, manifold mesh with every edge shared by two faces.');
+    }
+    const resolution = Number(field('ksVoxelResolution').value);
+    const {MeshBVH} = await import('three-mesh-bvh');
+    const tree = new MeshBVH(original,{indirect:true});
+    if (mesh !== active() || original !== mesh.geometry) throw Error('The selected mesh changed.');
+    const bounds = original.boundingBox?.clone() ||
+      new THREE.Box3().setFromBufferAttribute(original.attributes.position);
+    const size = bounds.getSize(new THREE.Vector3());
+    const step = Math.max(size.x,size.y,size.z) / resolution;
+    if (!Number.isFinite(step) || step <= 1e-8) throw Error('The mesh has no usable volume.');
+    const origin = bounds.min.clone().addScalar(-2*step);
+    const nx = Math.ceil(size.x/step)+4, ny = Math.ceil(size.y/step)+4, nz = Math.ceil(size.z/step)+4;
+    const total = nx*ny*nz;
+    if (total > 260000) throw Error('Reduce voxel resolution for this mesh size.');
+    const fieldValues = new Float32Array(total);
+    const index = (x,y,z) => (z*ny+y)*nx+x;
+    const ray = new THREE.Ray(new THREE.Vector3(),new THREE.Vector3(1,0,0));
+    const target = {};
+    const hitXs = [];
+    const distinctHits = [];
+    const point = new THREE.Vector3();
+    let completedRows = 0;
+    for (let z=0;z<nz;z++) {
+      const pz=origin.z+z*step;
+      for (let y=0;y<ny;y++) {
+        const py=origin.y+y*step;
+        ray.origin.set(origin.x,py,pz);
+        hitXs.length=0;
+        for (const hit of tree.raycast(ray,THREE.DoubleSide,0,nx*step)) hitXs.push(hit.point.x);
+        hitXs.sort((a,b)=>a-b);
+        distinctHits.length=0;
+        for (const x of hitXs) {
+          if (!distinctHits.length || Math.abs(x-distinctHits[distinctHits.length-1])>step*1e-4) distinctHits.push(x);
+        }
+        let crossing=0;
+        for (let x=0;x<nx;x++) {
+          const px=origin.x+x*step;
+          while (crossing<distinctHits.length && distinctHits[crossing] <= px+step*1e-5) crossing++;
+          point.set(px,py,pz);
+          const nearest=tree.closestPointToPoint(point,target);
+          if (!nearest || !Number.isFinite(nearest.distance)) throw Error('Could not evaluate the mesh surface.');
+          fieldValues[index(x,y,z)]=(crossing%2 ? -nearest.distance : nearest.distance);
+        }
+        completedRows++;
+      }
+      if ((z&3)===3) {
+        report('Voxel Remesh sampling '+Math.round(completedRows/(ny*nz)*100)+'%…');
+        await new Promise(resolve=>requestAnimationFrame(resolve));
+        if (mesh !== active() || original !== mesh.geometry) throw Error('The selected mesh changed.');
+      }
+    }
+    const tetrahedra=[[0,5,1,6],[0,1,2,6],[0,2,3,6],[0,3,7,6],[0,7,4,6],[0,4,5,6]];
+    const cubeOffsets=[[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]];
+    const result=[];
+    const outward=new THREE.Vector3(), insideCenter=new THREE.Vector3(), outsideCenter=new THREE.Vector3();
+    const addTriangle=(a,b,c,inside,outside)=>{
+      const normal=b.clone().sub(a).cross(c.clone().sub(a));
+      if (normal.dot(outward.copy(outside).sub(inside))<0) [b,c]=[c,b];
+      result.push([{p:a},{p:b},{p:c}]);
+    };
+    const interpolate=(a,b,va,vb)=>{
+      const t=THREE.MathUtils.clamp(va/(va-vb),0,1);
+      return a.clone().lerp(b,t);
+    };
+    const corners=Array.from({length:8},()=>new THREE.Vector3());
+    const values=new Float32Array(8);
+    for (let z=0;z<nz-1;z++) for (let y=0;y<ny-1;y++) for (let x=0;x<nx-1;x++) {
+      for (let c=0;c<8;c++) {
+        const [dx,dy,dz]=cubeOffsets[c];
+        corners[c].set(origin.x+(x+dx)*step,origin.y+(y+dy)*step,origin.z+(z+dz)*step);
+        values[c]=fieldValues[index(x+dx,y+dy,z+dz)];
+      }
+      for (const tetra of tetrahedra) {
+        const ins=tetra.filter(i=>values[i]<0), outs=tetra.filter(i=>values[i]>=0);
+        if (!ins.length || !outs.length) continue;
+        insideCenter.set(0,0,0);outsideCenter.set(0,0,0);
+        ins.forEach(i=>insideCenter.add(corners[i]));
+        outs.forEach(i=>outsideCenter.add(corners[i]));
+        insideCenter.multiplyScalar(1/ins.length);outsideCenter.multiplyScalar(1/outs.length);
+        const cross=(i,j)=>interpolate(corners[i],corners[j],values[i],values[j]);
+        if (ins.length===1) {
+          addTriangle(cross(ins[0],outs[0]),cross(ins[0],outs[1]),cross(ins[0],outs[2]),insideCenter,outsideCenter);
+        } else if (ins.length===3) {
+          addTriangle(cross(ins[0],outs[0]),cross(ins[1],outs[0]),cross(ins[2],outs[0]),insideCenter,outsideCenter);
+        } else {
+          const a=cross(ins[0],outs[0]),b=cross(ins[0],outs[1]);
+          const c=cross(ins[1],outs[0]),d=cross(ins[1],outs[1]);
+          addTriangle(a,c,d,insideCenter,outsideCenter);
+          addTriangle(a,d,b,insideCenter,outsideCenter);
+        }
+      }
+    }
+    if (!result.length) throw Error('Voxel Remesh found no enclosed surface.');
+    if (mesh !== active() || original !== mesh.geometry) throw Error('The selected mesh changed.');
+    const geometry=writeMesh(result,{smooth:true,uv:false});
+    replaceGeometry(mesh,geometry);
+    return 'Voxel Remesh created '+(geometry.index.count/3).toLocaleString()+' triangles at resolution '+resolution+'. UVs are not preserved.';
+  }
+
   async function surfaceTree(mesh) {
     const source = mesh.geometry;
     const version = source.attributes.position.version;
@@ -987,6 +1099,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     makeButton(solidActions, 'Boolean ' + kind, () => solidAction(kind));
   }
   makeButton(solidActions, 'Surface remesh', () => solidAction('remesh'));
+  makeButton(solidActions, 'Voxel Remesh', voxelRemesh).id = 'ksVoxelRemesh';
   makeButton(solidActions, 'Duplicate mirrored mesh X', () => {
     const mesh = active();
     replaceGeometry(mesh, writeMesh(duplicateMirror(readMesh(mesh.geometry), 'x')));
