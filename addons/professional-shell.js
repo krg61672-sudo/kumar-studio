@@ -22,7 +22,44 @@ const nav=document.getElementById('ksWorkflowNav');if(nav)nav.hidden=true;
 const ref=document.getElementById('referenceModeling');if(ref){ref.open=true;aside.prepend(ref);}
 const libraryPanel=document.getElementById('characterWorkspace');if(libraryPanel)libraryPanel.open=false;
 const button=(label,title,action)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.setAttribute('aria-label',title);b.onclick=action;return b;};
-const tools=[['↖','Select',()=>document.getElementById('refBlocks')?.focus()],['✥','Move',()=>document.getElementById('ref_px')?.scrollIntoView({block:'center'})],['⟳','Rotate',()=>document.getElementById('ref_ry')?.scrollIntoView({block:'center'})],['⤢','Scale',()=>document.getElementById('ref_sx')?.scrollIntoView({block:'center'})],['⬡','Add mesh',()=>{const p=document.querySelector('[data-shape="box"]');p?.click();}],['◌','Sculpt / vertex edit',()=>{const p=document.getElementById('refEditOn');if(p){p.checked=!p.checked;p.dispatchEvent(new Event('change'));}}],['◈','Add sphere',()=>document.querySelector('[data-shape="sphere"]')?.click()],['◫','Add cylinder',()=>document.querySelector('[data-shape="cylinder"]')?.click()],['◐','Smooth selected mesh',()=>document.getElementById('refSmooth')?.click()],['⇄','Mirror selected mesh',()=>{const p=document.getElementById('refMirror');if(p)p.checked=!p.checked;}]];
+function showTransform(mode, fallback){
+ const selection=document.getElementById('ksComponentMode');
+ const gizmo=document.getElementById('ksGizmoMode');
+ if(document.body.dataset.ksMode!=='Modeling'||!selection||!gizmo){
+  document.getElementById(fallback)?.scrollIntoView({block:'center'});
+  return;
+ }
+ if(['off','knife','retopo'].includes(selection.value)){
+  selection.value='object';
+  selection.dispatchEvent(new Event('change'));
+ }
+ gizmo.value=mode;
+ gizmo.dispatchEvent(new Event('change'));
+}
+const tools=[
+ ['↖','Select',()=>document.getElementById('refBlocks')?.focus()],
+ ['✥','Move',()=>showTransform('translate','ref_px')],
+ ['⟳','Rotate',()=>showTransform('rotate','ref_ry')],
+ ['⤢','Scale',()=>showTransform('scale','ref_sx')],
+ ['⬡','Add mesh',()=>document.querySelector('[data-shape="box"]')?.click()],
+ ['◌','Sculpt / vertex edit',()=>{
+  const control=document.getElementById('refEditOn');
+  if(control){control.checked=!control.checked;control.dispatchEvent(new Event('change'));}
+ }],
+ ['◈','Add sphere',()=>document.querySelector('[data-shape="sphere"]')?.click()],
+ ['◫','Add cylinder',()=>document.querySelector('[data-shape="cylinder"]')?.click()],
+ ['◐','Smooth selected mesh',()=>document.getElementById('refSmooth')?.click()],
+ ['⇄','Mirror selected mesh',()=>{
+  const mirror=document.getElementById('ksMirrorWeld');
+  if(document.body.dataset.ksMode==='Modeling'&&mirror){
+   mirror.closest('details').open=true;
+   mirror.scrollIntoView({block:'center'});
+   return;
+  }
+  const option=document.getElementById('refMirror');
+  if(option)option.checked=!option.checked;
+ }]
+];
 const toolLabels=['Select','Move','Rotate','Scale','Mesh','Edit','Sphere','Cylinder','Smooth','Mirror'];
 tools.forEach(([glyph,title,action],i)=>{const b=button(glyph,title,()=>{left.querySelectorAll('button').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');action();});b.innerHTML='<span class="ks-tool-glyph">'+glyph+'</span><span class="ks-tool-label">'+toolLabels[i]+'</span>';if(i===0)b.classList.add('selected');left.append(b);});
 const viewBar=document.createElement('div');viewBar.id='ksViewBar';viewBar.innerHTML='<div class="ks-view-modes"><button data-view="front">Front</button><button data-view="side">Side</button><button data-view="back">Back</button><button data-view="full">Full</button></div><span>◫ 3D VIEWPORT</span>';view.append(viewBar);

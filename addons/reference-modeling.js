@@ -92,9 +92,12 @@ function updateScale(){
 }
 scaleTarget.addEventListener('change',captureScaleBaseline);
 scaleSlider.addEventListener('input',updateScale);
-$('refScaleDown').onclick=()=>{scaleSlider.value=String(Math.max(20,Number(scaleSlider.value)-10));updateScale();};
-$('refScaleUp').onclick=()=>{scaleSlider.value=String(Math.min(300,Number(scaleSlider.value)+10));updateScale();};
-$('refScaleReset').onclick=()=>{scaleSlider.value='100';updateScale();};
+function checkpointShapeScale(){
+ if(scaleTarget.value!=='image'&&bridge.edit.active())bridge.checkpoint();
+}
+$('refScaleDown').onclick=()=>{checkpointShapeScale();scaleSlider.value=String(Math.max(20,Number(scaleSlider.value)-10));updateScale();};
+$('refScaleUp').onclick=()=>{checkpointShapeScale();scaleSlider.value=String(Math.min(300,Number(scaleSlider.value)+10));updateScale();};
+$('refScaleReset').onclick=()=>{checkpointShapeScale();scaleSlider.value='100';updateScale();};
 $('refSize').addEventListener('input',()=>{if(scaleTarget.value!=='shape')captureScaleBaseline();});
 const controls=[['Position X','px',-3,3,.01,0],['Position Y','py',-1,4,.01,1],['Position Z','pz',-3,3,.01,0],['Width','sx',.05,5,.01,1],['Height','sy',.05,5,.01,1],['Depth','sz',.05,5,.01,1],['Rotate Y','ry',-180,180,1,0]];
 const host=$('refTransform');for(const [label,id,min,max,step,value] of controls){const l=document.createElement('label');l.textContent=label+' ';const out=document.createElement('span');out.id='refVal_'+id;out.textContent=value;l.append(out);const input=document.createElement('input');input.id='ref_'+id;input.type='range';input.min=min;input.max=max;input.step=step;input.value=value;input.oninput=()=>{out.textContent=input.value;applyTransform();};host.append(l,input);}
@@ -129,8 +132,9 @@ $('refHumanBase').onclick=()=>{
   ['capsule',-.19,-.15,0,.16,.51,.16],['capsule',.19,-.15,0,.16,.51,.16], // shins
   ['box',-.19,-.48,.13,.18,.14,.34],['box',.19,-.48,.13,.18,.14,.34] // feet
  ];
+ bridge.checkpoint();
  for(const [type,x,y,z,sx,sy,sz] of parts){
-  bridge.add(type);
+  bridge.add(type,false);
   bridge.transform({position:{x,y:y+.55,z},scale:{x:sx/.35,y:sy/.35,z:sz/.35}});
  }
  selected=bridge.list().length-1;refresh();captureScaleBaseline();
@@ -138,8 +142,15 @@ $('refHumanBase').onclick=()=>{
 };
 panel.querySelectorAll('[data-shape]').forEach(b=>b.onclick=()=>{bridge.add(b.dataset.shape);selected=bridge.list().length-1;refresh();captureScaleBaseline();setDeform();say('3D '+b.dataset.shape+' added. Adjust its position, size and rotation.');});
 $('refBlocks').onchange=e=>{selected=e.target.value===''?-1:Number(e.target.value);refresh();captureScaleBaseline();deformIds.forEach((id,i)=>{$(id).value=String([100,100,100,0,0][i]);});};
-$('refModelUndo').onclick=()=>{if(!bridge.undo()){say('Nothing to undo yet.');return;}selected=bridge.list().length-1;refresh();captureScaleBaseline();say('Last shape add/delete undone.');};
-$('refModelRedo').onclick=()=>{if(!bridge.redo()){say('Nothing to redo yet.');return;}selected=bridge.list().length-1;refresh();captureScaleBaseline();say('Shape action redone.');};
+document.addEventListener('ks-modeling-geometry',()=>{
+ selected=bridge.activeIndex();
+ refresh();
+ captureScaleBaseline();
+ const mesh=bridge.edit.active();
+ if(mesh)deformCache.delete(mesh);
+});
+$('refModelUndo').onclick=()=>say(bridge.undo()?'Geometry change undone.':'Nothing to undo yet.');
+$('refModelRedo').onclick=()=>say(bridge.redo()?'Geometry change redone.':'Nothing to redo yet.');
 function deleteSelectedShape(){
  const shapes=bridge.list();
  if(!shapes.length){say('No 3D blockout shape exists to delete.');return;}
@@ -184,15 +195,29 @@ function deformBlock(){
  $('refDeformStatus').textContent='Shape reshaped. Use touch Mesh Edit for finer adjustments.';
 }
 function setDeform(values){
+
  const defaults=[100,100,100,0,0];
  deformIds.forEach((id,i)=>{$(id).value=String(values?.[i]??defaults[i]);});
  deformBlock();
 }
+for(const id of [...deformIds,...controls.map(([,id])=>'ref_'+id),'refScaleSlider']){
+ const input=$(id);
+ if(!input)continue;
+ input.addEventListener('pointerdown',()=>{if(bridge.edit.active())bridge.checkpoint();});
+ input.addEventListener('keydown',event=>{
+  if(bridge.edit.active()&&!event.repeat&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(event.key))bridge.checkpoint();
+ });
+}
 deformIds.forEach(id=>$(id).addEventListener('input',deformBlock));
-$('refHeadPreset').onclick=()=>setDeform([90,115,85,-18,15]);
-$('refTorsoPreset').onclick=()=>setDeform([135,185,85,-24,35]);
-$('refLimbPreset').onclick=()=>setDeform([65,250,65,8,0]);
-$('refDeformReset').onclick=()=>setDeform();
+for(const [id,values] of [
+ ['refHeadPreset',[90,115,85,-18,15]],['refTorsoPreset',[135,185,85,-24,35]],
+ ['refLimbPreset',[65,250,65,8,0]],['refDeformReset',undefined]
+]){
+ $(id).onclick=()=>{
+  if(bridge.edit.active())bridge.checkpoint();
+  setDeform(values);
+ };
+}
 
 // Finger-first vertex editing: select a point by tapping a mesh and drag it in camera plane.
 const meshEdit=document.createElement('section');meshEdit.id='refMeshEdit';
@@ -207,7 +232,7 @@ meshEdit.innerHTML=`<h4>Freehand Sculpt · Finger Brush</h4>
 <p id="refEditStatus" aria-live="polite">Select a shape and enable finger sculpt.</p>`;
 $('refExport').before(meshEdit);
 captureScaleBaseline();
-const edit=bridge.edit;let gesture=null,lastEdit=null;
+const edit=bridge.edit;let gesture=null;
 const canvas=edit.canvas,editStatus=msg=>$('refEditStatus').textContent=msg;
 function endGesture(){gesture=null;edit.setOrbit(true);}
 function applyStroke(e){
@@ -225,6 +250,10 @@ function applyStroke(e){
   const sign=mode==='inflate'?1:-1;
   delta=[normal[0]*magnitude*sign,normal[1]*magnitude*sign,normal[2]*magnitude*sign];
  }
+ if(!gesture.recorded){
+  bridge.checkpoint();
+  gesture.recorded=true;
+ }
  if(edit.brushMove(gesture.center,delta,radius,strength,$('refMirror').checked)){
   gesture.x=e.clientX;gesture.y=e.clientY;
   // Three.js is module-scoped in the main studio, so this addon must not use a global THREE.
@@ -236,7 +265,7 @@ canvas.addEventListener('pointerdown',e=>{
  const hit=edit.brushAt(e.clientX,e.clientY);if(!hit)return;
  e.preventDefault();e.stopImmediatePropagation();
  const mesh=edit.active();
- gesture={pointer:e.pointerId,center:hit.local,world:hit.world,normal:hit.normal,x:e.clientX,y:e.clientY,mesh,geometry:mesh.geometry.attributes.position.array.slice()};
+ gesture={pointer:e.pointerId,center:hit.local,world:hit.world,normal:hit.normal,x:e.clientX,y:e.clientY,mesh};
  edit.setOrbit(false);canvas.setPointerCapture(e.pointerId);editStatus('Sculpting · drag to reshape surface');
 },true);
 canvas.addEventListener('pointermove',e=>{
@@ -246,17 +275,12 @@ canvas.addEventListener('pointermove',e=>{
 canvas.addEventListener('pointerup',e=>{
  if(!gesture||gesture.pointer!==e.pointerId)return;
  e.preventDefault();e.stopImmediatePropagation();applyStroke(e);
- lastEdit={mesh:gesture.mesh,geometry:gesture.geometry};endGesture();editStatus('Stroke applied. Undo is available.');
+ const mesh=gesture.mesh;endGesture();deformCache.delete(mesh);editStatus('Stroke applied. Undo is available.');
 },true);
 canvas.addEventListener('pointercancel',endGesture,true);
 $('refEditOn').onchange=()=>{endGesture();editStatus($('refEditOn').checked?'Drag directly on your selected shape to sculpt.':'Sculpt off; camera navigation restored.');};
-$('refUndoVertex').onclick=()=>{
- if(!lastEdit||lastEdit.mesh!==edit.active()){editStatus('No stroke to undo on this shape.');return;}
- const attr=lastEdit.mesh.geometry.attributes.position;
- if(attr.array.length!==lastEdit.geometry.length){editStatus('Geometry changed; cannot undo that stroke.');return;}
- attr.array.set(lastEdit.geometry);attr.needsUpdate=true;lastEdit.mesh.geometry.computeVertexNormals();lastEdit.mesh.geometry.computeBoundingSphere();lastEdit.mesh.geometry.computeBoundingBox();
- lastEdit=null;editStatus('Last sculpt stroke undone.');
-};
+$('refUndoVertex').textContent='Undo Geometry';
+$('refUndoVertex').onclick=()=>editStatus(bridge.undo()?'Geometry change undone.':'Nothing to undo yet.');
 $('refSmooth').onclick=()=>{if(edit.smooth(1))editStatus('Mesh smoothing applied.');else editStatus('Select an indexed 3D mesh first.');};
 
 $('refExport').onclick=()=>{const data={format:'kumar-blockout-v1',blocks:bridge.list()};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='kumar-character-blockout.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1200);say('Blockout JSON exported. Reference image is not included.');};
