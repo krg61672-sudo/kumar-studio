@@ -40,6 +40,12 @@ Call the studio **complete** only after all required tests pass on the actual ri
 - **Review controls:** preview/apply/reject, undo/redo and reliable saved projects.
 - Blocked performances must remain editable and transfer to the final rig without replacing the character identity or resetting scene coordinates.
 
+## Touch component-edit camera lock — 2026-11-28
+
+**Status: PARTIAL / YELLOW.** The modeling editor now tracks active touch pointers while a component-edit tool is selected and keeps OrbitControls disabled until those pointers end or cancel. Object-mode touch navigation and the separate Advanced Sculpt stroke handler are unchanged. The phone-browser regression case in [virtual-controls.cjs](../tests/virtual-controls.cjs) checks that a finger drag with “Drag component in camera plane” off leaves camera position unchanged before and after pointer release.
+
+The changed JavaScript and regression test pass syntax checks. The interactive case has **not** been executed in this environment: the installed `/usr/bin/chromium` wrapper points to a missing `/usr/lib/chromium/chromium` binary, and the available cloud browser refuses WebGL contexts. Do not mark the touch camera fix GREEN until the phone runner passes with software WebGL or it is checked on a real Android/iPad browser.
+
 ## V6.0 virtual controls QA
 
 The three panels start disabled independently. The settings button in the Studio header opens their activation, sensitivity and appearance controls. Object and component edits use the Studio geometry history. The viewport grants an active edit gesture priority over competing gestures on that surface.
