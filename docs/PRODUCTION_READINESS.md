@@ -100,3 +100,33 @@ KUMAR_QA_EXTENDED=1 KUMAR_QA_BLENDER=/usr/bin/blender node tests/virtual-control
 ```
 
 Omit `KUMAR_QA_BLENDER` to check the direct browser export/import path.
+
+## Natural Movement Quality visual review
+
+**Status PARTIAL.** The visual runner renders the actual MakeHuman skinned character and Studio poses into four synchronized cameras. This review included 22 takes at 25 sampled poses per take. Frame grids were inspected from front, side, back and three-quarter views. The evidence uses the same evaluated poses as the Studio timeline, with a temporary neutral material. The recordings are silent, with slowed playback and normalized timeline labels. Static hand presets are held for inspection.
+
+### Movement references
+
+- Carnegie Mellon Motion Capture Database human trials [02_01 Walk, 02_03 Run, and 02_04 Jump](https://github.com/tenzin3/human-motion-dataset/tree/master/data/002) were rendered as source skeletons for visual comparison. These reference clips have different subjects, timings and proportions from the Studio mannequin.
+- [Rancho Los Amigos gait phases](https://www.ouhsc.edu/bserdac/dthompso/web/gait/terms.htm) guided support and swing review. [Novacheck's running review](https://pubmed.ncbi.nlm.nih.gov/10200378/) informed the distinction between walking and running. [Chair-rise mechanics](https://pubmed.ncbi.nlm.nih.gov/2026635/) informed torso lean and transfer of weight onto the feet.
+
+| Area | Status | Visual finding and retest |
+|---|---|---|
+| Natural Standing and neutral arms | PASS for sampled pose | Arms sit down by the sides and elbow alignment was checked in all four views. Shoulder and wrist deformation across the full range remain open. |
+| Walk | PARTIAL | Alternating support and arm counter-swing were visible. A longer continuous walk and all style presets still need independent contact and deformation checks. |
+| Run support | PASS for sampled correction | The baseline visibly swept the foot along the floor. The updated clip uses world-space support targets, swing and flight, with a shorter arm swing and flexed elbows. Maximum ankle displacement across the sampled support windows dropped from about 0.418 to 0.018 Studio units. Sprinting and full-course acceleration remain unverified. |
+| Jump and landing | PASS for sampled correction | Compression, takeoff, flight, landing load and recovery were visible. Sampled post-landing ankle deviation fell from 0.043 to below 0.001 Studio units. This is a procedural motion with a ballistic root arc. Force, center of mass and momentum were not measured. |
+| Sit Down, Stand Up and paired transition | PASS for sampled correction | Feet remained visually planted and the torso leans toward the support base during transfer. Paired Sit Down → Stand Up now reuses the standing reference, avoiding a second crouch and a lowered end pose. The chairless preset was reviewed. Variable-height chair contact remains unverified. |
+| Turn and Walk → Run | PARTIAL | A recorded BVH turn excerpt and one sequencer transition were reviewed. Standalone turn controls and other transition pairs remain open. |
+| Punch, fingers and grips | PARTIAL | Straight Punch, both index curls and fist, sword, spear, staff and bow hand presets were recorded. Fist/thumb pinching and joint deformation remain visible in close-up. Live prop contact, arrow release, kick and chained fighting clips remain open. |
+| Acting and face | PARTIAL | Quiet Standing, Speaking Gesture, Listening, and Restrained Anger were recorded. Speaking Gesture visibly uses body motion. Blinking, facial emotions and audio-driven lip-sync remain unverified. |
+| Full anatomical and production validation | PARTIAL | Corrective muscle deformation, full-body balance under interaction, all motion variants, and real-device playback remain open. |
+
+Run the capture after installing the Chromium and MakeHuman fixtures documented above.
+
+```sh
+KUMAR_VISUAL_DIR=/tmp/kumar-visual node tests/natural-movement.cjs
+KUMAR_VISUAL_DIR=/tmp/kumar-visual node tests/natural-movement.cjs 'Run|Jump|Sit Down|Stand Up|Sit to Stand'
+```
+
+The runner writes PNG frames and sampled root/ankle positions for the selected takes. The numerical checks guard the sampled foot placement changes. The visual review provides the quality evidence.

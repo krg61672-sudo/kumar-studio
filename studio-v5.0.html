@@ -3166,6 +3166,89 @@ function groundedWalk(t,steps,f,stride,bob){
 
 }
 
+function gaitLegLength(){
+ const hip=rest.get('upperleg01.L'),knee=rest.get('lowerleg01.L'),foot=rest.get('foot.L');
+ return hip.distanceTo(knee)+knee.distanceTo(foot);
+}
+
+function placeMotionFoot(side,goal,direction,pitch=0){
+ captureLegIK(side,goal,direction);
+ const axis=new THREE.Vector3(0,1,0).cross(direction).normalize();
+ const q=motionBase.feet[side].orientation.clone();
+ q.premultiply(new THREE.Quaternion().setFromAxisAngle(axis,pitch));
+ captureOrient(getBone('foot.'+side),q);
+ for(let toe=1;toe<=5;toe++){
+  getBone('toe'+toe+'-1.'+side)?.quaternion.identity();
+ }
+}
+
+function plantedRun(t,steps,forwardDirection){
+ const progress=t*steps, leg=gaitLegLength(), stepLength=leg*.69;
+ const smooth=(a,b,x)=>THREE.MathUtils.smoothstep(x,a,b);
+ const travel=x=>(x-.36*smooth(0,1,x)-.34*smooth(steps-1,steps,x))*stepLength;
+ const stance=.72, phase=progress%1;
+ const envelope=smooth(0,.8,progress)*(1-smooth(steps-.75,steps,progress));
+ const flight=phase>stance?Math.sin(Math.PI*(phase-stance)/(1-stance)):0;
+ const dip=phase<stance?Math.sin(Math.PI*phase/stance):0;
+ const lateral=new THREE.Vector3(0,1,0).cross(forwardDirection);
+ const offset=forwardDirection.clone().multiplyScalar(travel(progress))
+  .addScaledVector(lateral,-.017*Math.cos(Math.PI*progress)*envelope);
+ offset.y=leg*(-.055*dip+.045*flight)*envelope;
+ captureTranslate(getBone('root'),offset);
+
+ for(const side of ['L','R']){
+  const first=side==='L'?0:1;
+  const step=first+2*Math.floor((progress-first)/2);
+  const plant=x=>x<=0?0:x>=steps?travel(steps):travel(x)+stepLength*.29;
+  const u=THREE.MathUtils.clamp((progress-step-stance)/(2-stance),0,1);
+  const moved=smooth(0,1,u);
+  const finish=smooth(steps-.57,steps,progress);
+  const advance=THREE.MathUtils.lerp(plant(step),plant(step+2),moved);
+  const goal=motionBase.feet[side].position.clone()
+   .addScaledVector(forwardDirection,THREE.MathUtils.lerp(advance,travel(steps),finish));
+  // Keep the supporting ankle in world space and raise only the swing foot.
+  goal.y+=leg*(.19*Math.sin(Math.PI*u)**2*(1-finish)*smooth(0,.45,progress)+.045*flight*envelope);
+  const pitch=Math.sin(Math.PI*u)*.26*(1-finish)*smooth(0,.45,progress);
+  placeMotionFoot(side,goal,forwardDirection,pitch);
+ }
+}
+
+function groundedAction(mode,t,turn,forwardDirection){
+ const leg=gaitLegLength(),jump=mode==='Jump';
+ const smooth=(a,b,x)=>THREE.MathUtils.smoothstep(x,a,b);
+ const u=mode==='Stand Up'?1-t:t;
+ let lift=0, sink=0, travel=0, lean=0, arm=0, kneeTuck=0;
+ if(jump){
+  const air=THREE.MathUtils.clamp((t-.40)/.38,0,1);
+  const compress=smooth(0,.25,t)*(1-smooth(.25,.40,t));
+  const absorb=smooth(.78,.86,t)*(1-smooth(.86,1,t));
+  lift=4*air*(1-air)*leg*.32;
+  sink=leg*(.16*compress+.14*absorb);
+  kneeTuck=leg*.07*Math.sin(Math.PI*air)**2;
+  lean=24*compress+20*absorb;
+  arm=-26*compress+54*smooth(.30,.48,t)*(1-smooth(.53,.82,t))+24*absorb;
+ } else {
+  const seat=smooth(.12,1,u);
+  sink=leg*.43*seat;
+  travel=-leg*.30*seat+leg*.04*Math.sin(Math.PI*u)**2;
+  lean=9*seat+26*Math.sin(Math.PI*u)**2;
+  arm=28*Math.sin(Math.PI*u)**2+8*seat;
+ }
+ const offset=forwardDirection.clone().multiplyScalar(travel);
+ offset.y=lift-sink;
+ captureTranslate(getBone('root'),offset);
+ const spine=spineChain();
+ for(const joint of spine)turn(joint.name,lean/Math.max(1,spine.length));
+ turn('neck01',-lean*.18);
+ for(const side of ['L','R']){
+  shoulderAngle(side,arm);
+  elbowAngle(side,Math.abs(arm)*.38);
+  const foot=motionBase.feet[side].position.clone();
+  foot.y+=lift+kneeTuck;
+  placeMotionFoot(side,foot,forwardDirection,jump?kneeTuck/leg:0);
+ }
+}
+
 function actingPose(mode,t,turn,f,up,across){
  const pulse=(start,peak,end)=>THREE.MathUtils.smoothstep(t,start,peak)*(1-THREE.MathUtils.smoothstep(t,peak,end));
  const envelope=THREE.MathUtils.smoothstep(t,0,.14)*(1-THREE.MathUtils.smoothstep(t,.8,1));
@@ -3209,7 +3292,7 @@ function motionPose(t){
  if(!motionBase||motionBase.rig!==posed)return;
  bones.forEach((b,i)=>{b.quaternion.copy(motionBase.q[i]);b.position.copy(motionBase.p[i]);});
  const mode=$("motionPreset").value,run=mode==="Run",jump=mode==="Jump",flight=mode==="Flying Launch",sit=mode==="Sit Down"||mode==="Stand Up",single=jump||flight||sit;
- const styles={"Walk":[23,40,18,12,5,3,0,0.018],"Royal Walk":[19,32,10,8,3,2,-3,.012],"Confident Walk":[29,45,25,15,7,4,-2,.025],"Stealth Walk":[17,48,9,25,3,2,15,.008],"Tired Walk":[15,28,8,10,4,3,12,.012],"Injured Walk":[18,32,12,12,5,5,6,.016],"Run":[40,75,35,45,8,5,12,.045]};
+ const styles={"Walk":[23,40,18,12,5,3,0,0.018],"Royal Walk":[19,32,10,8,3,2,-3,.012],"Confident Walk":[29,45,25,15,7,4,-2,.025],"Stealth Walk":[17,48,9,25,3,2,15,.008],"Tired Walk":[15,28,8,10,4,3,12,.012],"Injured Walk":[18,32,12,12,5,5,6,.016],"Run":[40,75,25,76,8,5,12,.045]};
  Object.assign(styles,{"Slow Walk":[15,30,12,10,4,3,1,.012],"Brisk Walk":[30,48,24,18,6,4,5,.023],"March":[30,55,35,12,3,2,0,.025],"Guard Patrol":[20,35,12,18,3,2,0,.012],"Elderly Walk":[12,24,8,15,3,4,15,.009],"Sneak Walk":[14,45,7,25,3,2,18,.007],"Sad Walk":[16,30,8,10,3,3,13,.012],"Angry Walk":[32,45,28,20,5,3,8,.027],"Graceful Walk":[22,36,13,10,6,5,-2,.014],"Heavy Walk":[24,42,15,15,4,5,7,.03]});
  const [stride,knee,arm,elbow,twist,sway,lean,bob]=styles[mode]||styles.Walk;
  const steps=Number($("motionSteps").value)||4;
@@ -3228,8 +3311,14 @@ function motionPose(t){
   syncJoint();
   return;
  }
+ if(jump||sit){
+  groundedAction(mode,t,turn,f);
+  posed.updateMatrixWorld(true);
+  syncJoint();
+  return;
+ }
  const crouch=Math.sin(Math.PI*t);
- const grounded=mode==="Walk";
+ const grounded=mode==="Walk"||run;
  if(true){
  for(const side of ["L","R"])for(const [part,next,amount] of [["upperarm01","lowerarm01",.72],["upperleg01","lowerleg01",.85]]){
  const b=getBone(part+"."+side),n=getBone(next+"."+side);if(!b||!n||!b.parent)continue;
@@ -3265,7 +3354,8 @@ function motionPose(t){
  turn("wrist."+side,jump?0:wave*4);
  }
  const height=jump?Math.sin(Math.PI*t)*.28:Math.abs(Math.sin(phase))*bob-(mode==="Stealth Walk"?.06:0);
- if(grounded)groundedWalk(t,steps,f,stride,bob);
+ if(run)plantedRun(t,steps,f);
+ else if(grounded)groundedWalk(t,steps,f,stride,bob);
  else bones[0].position.y+=height;
  if(!single&&!grounded){
  const root=bones[0];
@@ -3517,7 +3607,10 @@ function seqPrepare(){if(!posed||restRig!==posed||!seqItems.length)return false;
 function seqSample(item,t,base){seqApply(base);if(item.name==="Stand")return seqSnapshot();if(seqPoses.has(item.name)){const p=seqPoses.get(item.name);if(p.rig===posed){const rootPos=bones[0].position.clone();seqApply(p);bones[0].position.copy(rootPos);posed.updateMatrixWorld(true);}return seqSnapshot();}
 if(item.name==="Recorded BVH"){if(!captureData)return seqSnapshot();captureBase=base;captureData.anchors=null;capturePose(t*captureData.clip.duration);captureBase=null;return seqSnapshot();}
 const old=$("motionPreset").value;$("motionPreset").value=item.name;motionBase=motionWithFeet(base);try{motionPose(t);}finally{motionBase=null;$("motionPreset").value=old;}return seqSnapshot();}
-function seqPose(seconds){if(!seqBase||seqBase.rig!==posed)return;let base=seqBase,elapsed=0;for(const item of seqItems){const t=THREE.MathUtils.clamp((seconds-elapsed)/item.duration,0,1);const result=seqSample(item,t,base);if(seconds<=elapsed+item.duration){const blend=THREE.MathUtils.smoothstep(t*item.duration,0,Math.min(.25,item.duration*.5));for(let i=0;i<bones.length;i++){bones[i].quaternion.copy(base.q[i]).slerp(result.q[i],blend);bones[i].position.copy(base.p[i]).lerp(result.p[i],blend);}posed.updateMatrixWorld(true);syncJoint();return;}base=result;elapsed+=item.duration;}}
+function seqPose(seconds){if(!seqBase||seqBase.rig!==posed)return;let base=seqBase,elapsed=0,seatedBase=null;for(const item of seqItems){const t=THREE.MathUtils.clamp((seconds-elapsed)/item.duration,0,1);if(item.name==="Sit Down")seatedBase=base;
+ const result=seqSample(item,t,item.name==="Stand Up"&&seatedBase?seatedBase:base);
+ if(item.name!=="Sit Down")seatedBase=null;
+ if(seconds<=elapsed+item.duration){const blend=THREE.MathUtils.smoothstep(t*item.duration,0,Math.min(.25,item.duration*.5));for(let i=0;i<bones.length;i++){bones[i].quaternion.copy(base.q[i]).slerp(result.q[i],blend);bones[i].position.copy(base.p[i]).lerp(result.p[i],blend);}posed.updateMatrixWorld(true);syncJoint();return;}base=result;elapsed+=item.duration;}}
 const seqTotal=()=>seqItems.reduce((n,x)=>n+x.duration,0);
 $("seqPlay").onclick=()=>{if(seqRAF)cancelAnimationFrame(seqRAF);if(!seqPrepare()){$("seqStatus").textContent="Build skeleton and add actions first.";return;}const start=performance.now(),total=seqTotal();function frame(now){if(!seqBase||seqBase.rig!==posed){seqStop();return;}const t=Math.min(total,(now-start)/1000);seqPose(t);$("seqTime").value=Math.round(t/total*1000);if(t<total)seqRAF=requestAnimationFrame(frame);else seqRAF=0;}seqRAF=requestAnimationFrame(frame);};
 $("seqStop").onclick=seqStop;$("seqTime").oninput=()=>{if(seqRAF)cancelAnimationFrame(seqRAF);seqRAF=0;if(seqPrepare())seqPose(Number($("seqTime").value)/1000*seqTotal());};
