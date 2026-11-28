@@ -197,6 +197,17 @@ renderer.setAnimationLoop(()=>`),
   await click(mouseButton('Ctrl modifier'));
   await pointAt(await project([.15,.15,.175]));await click(mouseButton('Left mouse button'));
   await click(mouseButton('Ctrl modifier'));
+  if(touch){
+    await id('ksComponentDrag').uncheck();
+    const viewport=await id('view').boundingBox();
+    const start=[viewport.x+viewport.width*.5,viewport.y+viewport.height*.42];
+    const before=await camera();
+    await fingers('touchStart',[start]);
+    await fingers('touchMove',[[start[0]+42,start[1]+18]]);
+    assert.deepEqual(await camera(),before,'touch component editing must not orbit the camera');
+    await fingers('touchEnd',[]);
+    assert.deepEqual(await camera(),before,'camera must remain fixed after the edit touch ends');
+  }
   await select('right','Editing joystick mode','move');
   await select('right','Joystick axis lock','x');
   const beforeEdit=await model();
