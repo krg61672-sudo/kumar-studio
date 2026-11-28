@@ -30,3 +30,32 @@ jobs:
             echo "Testing $device viewport"
             node tests/virtual-controls.cjs "$device"
           done
+  natural-movement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser and rendering dependencies
+        run: npm install --prefix /tmp/ks-deps three@0.160.0 three-mesh-bvh@0.7.6 manifold-3d@3.5.5 playwright-core @sparticuz/chromium
+      - name: Fetch public MakeHuman and BVH test fixtures
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/3dobjs/base.obj -o /tmp/ks-base.obj
+          curl -fsSL https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/rigs/default.mhskel -o /tmp/ks-default.mhskel
+          curl -fsSL https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/rigs/default_weights.mhw -o /tmp/ks-default_weights.mhw
+          curl -fsSL https://threejs.org/examples/models/bvh/pirouette.bvh -o /tmp/ks-pirouette.bvh
+      - name: Test real-rig movement from four camera angles
+        env:
+          KUMAR_QA_DEPS: /tmp/ks-deps
+          KUMAR_QA_ASSETS: /tmp
+          KUMAR_VISUAL_DIR: /tmp/ks-natural
+          KUMAR_VISUAL_FRAMES: '25'
+        run: node tests/natural-movement.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: natural-movement-frames
+          path: /tmp/ks-natural/
+          if-no-files-found: warn
