@@ -6,7 +6,11 @@ const init=()=>{
  const panel=document.createElement('details');panel.id='ks-render-tools';
  panel.style.cssText='position:absolute;bottom:12px;right:12px;width:min(310px,calc(100% - 24px));background:#17243aee;color:#eee;border:1px solid #526984;border-radius:9px;padding:9px;z-index:20;max-height:70%;overflow:auto;font:13px Arial';
  panel.innerHTML='<summary style="cursor:pointer;color:#edc47c;font-weight:bold">🎬 Render & Capture Tools</summary><div style="padding-top:8px"><label>Output scale <select id="ks-scale"><option value="1">1× Native</option><option value="2">2× (upscale capture)</option></select></label><button id="ks-shot">Save PNG Frame</button><label>Recording FPS <select id="ks-fps"><option>24</option><option selected>30</option><option>60</option></select></label><button id="ks-record">Start Video Recording</button><button id="ks-stop" disabled>Stop & Save Video</button><p id="ks-capture-status" style="font-size:12px;color:#edc47c">Records the live viewport. WebM where supported; no audio.</p></div>';
- view.appendChild(panel);
+ const inspector=document.querySelector('#ksInspector>aside');
+ if(inspector){
+  panel.style.cssText='position:static;width:auto;max-width:100%;box-sizing:border-box;background:#20232c;color:#eee;border:1px solid #3a404b;border-radius:7px;padding:6px;font:12px system-ui';
+  inspector.appendChild(panel);
+ }else view.appendChild(panel);
  const $=id=>document.getElementById(id);const say=s=>$('ks-capture-status').textContent=s;
  let recorder=null,stream=null,chunks=[];
  $('ks-shot').onclick=()=>{
