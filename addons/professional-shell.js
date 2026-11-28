@@ -6,10 +6,10 @@ const main=document.querySelector('body>main'),aside=main?.querySelector(':scope
 if(!main||!aside||!view)return;
 document.body.classList.add('ks-pro');
 const header=document.querySelector('body>header');
-header.innerHTML='<span class="ks-logo">◢</span><span class="ks-brand">KUMAR STUDIO<small>V5.0</small></span><nav id="ksProTabs" aria-label="Workspaces"></nav><div class="ks-header-actions"><button id="ksUndo" title="Undo last vertex edit">↶</button><button id="ksExportQuick" title="Export project">▣</button><button id="ksPanelToggle" title="Toggle properties">☷</button></div>';
+header.innerHTML='<span class="ks-logo">♛</span><span class="ks-brand">Kumar Studio<small>V6.0</small></span><nav id="ksProTabs" aria-label="Workspaces"></nav><div class="ks-header-actions"><button id="ksUndo" title="Undo last vertex edit">↶</button><button id="ksExportQuick" title="Export project">▣</button><button id="ksPanelToggle" title="Toggle properties">☷</button></div>';
 header.id='ksProShell';
 const tabs=document.getElementById('ksProTabs');
-const modes=[['Character','Character'],['Modeling','Character'],['Sculpt','Character'],['Rigging','Rig & Pose'],['Animation','Rig & Pose'],['Scene','Scene & Camera'],['Files','Files & Export']];
+const modes=[['Project','Files & Export'],['Character','Character'],['Modeling','Character'],['Sculpt','Character'],['Rigging','Rig & Pose'],['Animation','Rig & Pose'],['Scene','Scene & Camera'],['Files','Files & Export']];
 let mode='Modeling';
 const left=document.createElement('nav');left.id='ksProTools';left.setAttribute('aria-label','Modeling tools');
 const inspector=document.createElement('section');inspector.id='ksInspector';
@@ -28,7 +28,7 @@ tools.forEach(([glyph,title,action],i)=>{const b=button(glyph,title,()=>{left.qu
 const viewBar=document.createElement('div');viewBar.id='ksViewBar';viewBar.innerHTML='<div class="ks-view-modes"><button data-view="front">Front</button><button data-view="side">Side</button><button data-view="back">Back</button><button data-view="full">Full</button></div><span>◫ 3D VIEWPORT</span>';view.append(viewBar);
 viewBar.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>document.getElementById(b.dataset.view)?.click());
 function choose(name){
- mode=name;tabs.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.mode===name));
+ mode=name;document.body.dataset.ksMode=name;tabs.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.mode===name));
  const target=modes.find(x=>x[0]===name)?.[1];
  const navBtn=[...(nav?.querySelectorAll('button')||[])].find(b=>b.textContent.trim()===target);
  navBtn?.click();
@@ -103,6 +103,18 @@ body.ks-pro #info{display:none}
 @media(max-width:1000px){#ksInspector{width:275px;flex-basis:275px}#ksProTools{width:60px;flex-basis:60px}.ks-tool-label{font-size:9px}.ks-brand{min-width:105px;font-size:11px}#ksProTabs button{min-width:70px;padding:0 8px!important}}
 @media(max-width:700px){body.ks-pro>header{gap:5px;padding:0 6px;height:54px;flex-basis:54px}.ks-logo{font-size:22px}.ks-brand{min-width:75px;font-size:9px}#ksProTabs button{min-width:63px;font-size:11px;padding:0 5px!important}.ks-header-actions button{width:32px!important;min-width:32px!important}#ksInspector{width:42vw;flex-basis:42vw}#ksProTools{width:47px;flex-basis:47px;padding:5px 2px}.ks-tool-glyph{font-size:19px}.ks-tool-label{font-size:8px}#ksProTools button{min-height:49px!important}#ksViewBar{right:auto}#ksViewBar>span{display:none}#ksViewBar button{min-width:42px!important;font-size:10px}body.ks-pro #ksTouchToolbar{top:58px!important}}
 `;document.head.append(css);
+
+const dock=document.createElement('div');dock.id='ksPrimitiveDock';
+[['＋','Box','box'],['○','Sphere','sphere'],['▱','Cylinder','cylinder'],['⬭','Capsule','capsule']].forEach(([icon,label,shape])=>dock.append(button(icon+' '+label,'Add '+label,()=>document.querySelector('[data-shape="'+shape+'"]')?.click())));
+dock.append(button('Human','Create organic human starter',()=>document.getElementById('refOrganicHuman')?.click()),button('Smooth','Smooth selected mesh',()=>document.getElementById('refSmooth')?.click()));
+view.append(dock);
+const scenePanel=document.createElement('section');scenePanel.id='ksSceneTree';scenePanel.innerHTML='<strong>◈ Scene / Objects</strong><div id="ksSceneRows"></div>';inspector.insertBefore(scenePanel,aside);
+function refreshScene(){const select=document.getElementById('refBlocks'),rows=document.getElementById('ksSceneRows');if(!select||!rows)return;const signature=JSON.stringify([select.value,...Array.from(select.options,o=>[o.value,o.textContent])]);if(rows.dataset.signature===signature)return;rows.dataset.signature=signature;rows.replaceChildren();Array.from(select.options).filter(o=>o.value!=='').forEach(o=>{const b=button('◇ '+o.textContent,'Select '+o.textContent,()=>{select.value=o.value;select.dispatchEvent(new Event('change',{bubbles:true}));refreshScene();});b.classList.toggle('active',o.value===select.value);rows.append(b);});if(!rows.children.length)rows.textContent='No modeling objects — add a shape or human starter.';}
+const sceneObserver=new MutationObserver(refreshScene);const objectSelect=document.getElementById('refBlocks');if(objectSelect){sceneObserver.observe(objectSelect,{childList:true,subtree:true,characterData:true});objectSelect.addEventListener('change',refreshScene);}refreshScene();
+const theme=document.createElement('style');theme.textContent=`
+body.ks-pro{background:#101217}body.ks-pro>header{background:#15171e;gap:10px}.ks-brand{flex-direction:row;align-items:center;gap:5px;letter-spacing:0;font-size:16px;white-space:nowrap}.ks-logo{color:#ffc34d}#ksProTabs button.active,#ksProTools button.selected{background:#51388f;border-color:#7957c5;color:white}#ksProTools{width:142px;flex-basis:142px;background:#181b23}#ksProTools button{flex-direction:row;justify-content:flex-start;gap:12px;min-height:42px!important;padding:7px 12px!important}.ks-tool-label{font-size:12px}.ks-tool-glyph{width:24px;text-align:center}#ksInspector{background:#151820}#ksInspector aside details{background:#20232c!important}#ksInspector aside summary,.ks-panel-head,.ks-timeline-title{color:#e1e2eb!important}#ksInspector aside input[type=range]{accent-color:#9470e8}#ksViewBar button:first-child{border-color:#7957c5;color:#e2d4ff}#ksPrimitiveDock{position:absolute;bottom:8px;left:8px;right:8px;display:flex;gap:5px;overflow-x:auto;background:#191c25ee;border:1px solid #393d49;border-radius:8px;padding:5px;z-index:7}#ksPrimitiveDock button{width:auto;flex:0 0 auto;margin:0;min-height:36px;background:#262a35;border-color:#424653;font-size:12px}#ksSceneTree{padding:10px;border-bottom:1px solid #393d49;max-height:30%;overflow:auto;font-size:12px}#ksSceneRows{margin-top:6px;color:#a9afbf}#ksSceneRows button{display:block;text-align:left;margin:2px 0;padding:5px 8px;background:transparent;border:0;color:#e0e2ea}#ksSceneRows button.active{background:#493478}#ksProTimeline{background:#171a22}body.ks-pro:not([data-ks-mode="Modeling"]) #ksPrimitiveDock{display:none}body.ks-pro:not([data-ks-mode="Modeling"]) #ksSceneTree{display:none}@media(max-width:1000px){#ksProTools{width:70px;flex-basis:70px}#ksProTools button{flex-direction:column;gap:2px;padding:4px!important}.ks-tool-label{font-size:10px}}@media(max-width:700px){#ksProTools{width:48px;flex-basis:48px}.ks-tool-label{font-size:8px}.ks-brand{font-size:11px;flex-direction:column;gap:0}#ksPrimitiveDock button{font-size:10px;min-height:32px}}
+`;document.head.append(theme);
+
 choose('Modeling');
 window.addEventListener('load',()=>window.KumarWorkspaceVisibility?.(mode));
 setTimeout(()=>window.dispatchEvent(new Event('resize')),150);
