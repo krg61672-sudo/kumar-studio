@@ -226,7 +226,7 @@ meshEdit.innerHTML=`<h4>Advanced Sculpt Mode</h4>
 <label>Brush action <select id="refBrushMode"><option value="grab">Grab / Stretch (drag any direction)</option><option value="inflate">Pull Out (raise surface)</option><option value="deflate">Push In (dent surface)</option><option value="smooth">Smooth</option><option value="flatten">Flatten</option><option value="pinch">Pinch</option><option value="crease">Crease</option><option value="clay">Clay</option><option value="draw">Draw</option><option value="scrape">Scrape</option><option value="fill">Fill</option><option value="snake">Snake Hook</option><option value="mask">Paint Mask</option><option value="unmask">Erase Mask</option></select></label>
 <label>Brush size <input id="refBrushRadius" type="range" min="5" max="100" value="38"></label>
 <label>Brush strength <input id="refBrushStrength" type="range" min="5" max="100" value="60"></label>
-<label><input id="refPressure" type="checkbox" checked> Pen pressure strength</label><button id="refMaskClear" type="button">Clear sculpt mask</button><button id="refMaskInvert" type="button">Invert mask</button><button id="refDetailUp" type="button">Subdivide mesh ×4</button><label>Falloff <select id="refFalloff"><option value="smooth">Smooth</option><option value="linear">Linear</option><option value="sharp">Sharp</option></select></label><label><input id="refMirror" type="checkbox"> Mirror X</label><label><input id="refMirrorY" type="checkbox"> Mirror Y</label><label><input id="refMirrorZ" type="checkbox"> Mirror Z</label>
+<label><input id="refPressure" type="checkbox" checked> Pen pressure strength</label><button id="refMaskClear" type="button">Clear sculpt mask</button><label><input id="refMaskShow" type="checkbox" checked> Show mask</label><button id="refMaskInvert" type="button">Invert mask</button><button id="refDetailUp" type="button">Subdivide mesh ×4</button><label>Falloff <select id="refFalloff"><option value="smooth">Smooth</option><option value="linear">Linear</option><option value="sharp">Sharp</option></select></label><label><input id="refMirror" type="checkbox"> Mirror X</label><label><input id="refMirrorY" type="checkbox"> Mirror Y</label><label><input id="refMirrorZ" type="checkbox"> Mirror Z</label>
 <p>Choose a shape, enable sculpt, then drag your finger anywhere on its surface. Grab stretches freely; Pull Out and Push In raise or indent the touched area. Switch off sculpt to orbit the camera.</p>
 <div class="refButtons"><button id="refUndoVertex" type="button">Undo Last Stroke</button><button id="refSmooth" type="button">Smooth Mesh</button></div>
 <p id="refEditStatus" aria-live="polite">Select a shape and enable finger sculpt.</p>`;
@@ -235,11 +235,26 @@ captureScaleBaseline();
 const edit=bridge.edit;let gesture=null;
 const canvas=edit.canvas,editStatus=msg=>$('refEditStatus').textContent=msg;
 function endGesture(){gesture=null;edit.setOrbit(true);}
-const sculptMasks=new WeakMap();
-$('refMaskInvert').onclick=()=>{const m=edit.active();if(!m)return;const g=m.geometry,mask=sculptMasks.get(g)||new Float32Array(g.attributes.position.count);for(let i=0;i<mask.length;i++)mask[i]=1-mask[i];sculptMasks.set(g,mask);editStatus('Mask inverted.');};
+const sculptMasks={
+ get(g){return g?.userData?.sculptMask;},
+ has(g){return !!this.get(g);},
+ set(g,v){g.userData.sculptMask=Array.from(v);},
+ delete(g){delete g.userData.sculptMask;}
+};
+function showSculptMask(mesh){
+ if(!mesh)return;
+ const g=mesh.geometry,a=g.attributes.position,mask=sculptMasks.get(g);
+ if(!mask||!$('refMaskShow').checked){g.deleteAttribute('color');mesh.material.vertexColors=false;}
+ else{const colors=new Float32Array(a.count*3);for(let i=0;i<a.count;i++)colors.fill(1-.8*(mask[i]||0),i*3,i*3+3);g.setAttribute('color',new a.constructor(colors,3));mesh.material.vertexColors=true;}
+ mesh.material.needsUpdate=true;
+}
+$('refMaskShow').onchange=()=>showSculptMask(edit.active());
+document.addEventListener('ks-modeling-geometry',()=>showSculptMask(edit.active()));
+
+$('refMaskInvert').onclick=()=>{const m=edit.active();if(!m)return;const g=m.geometry,mask=sculptMasks.get(g)||new Float32Array(g.attributes.position.count);bridge.checkpoint();for(let i=0;i<mask.length;i++)mask[i]=1-mask[i];sculptMasks.set(g,mask);showSculptMask(m);editStatus('Mask inverted.');};
 $('refDetailUp').onclick=()=>{const m=edit.active();if(!m)return;if(sculptMasks.get(m.geometry)?.some(v=>v>0)){editStatus('Clear mask before subdivision.');return;}if(edit.subdivideTriangles()){deformCache.delete(m);editStatus('Mesh detail increased. Undo restores previous geometry.');document.dispatchEvent(new Event('ks-modeling-geometry'));}else editStatus('Subdivision unavailable or mesh density limit reached.');};
 
-$("refMaskClear").onclick=()=>{const g=edit.active()?.geometry;if(g)sculptMasks.delete(g);editStatus("Sculpt mask cleared.");};
+$("refMaskClear").onclick=()=>{const g=edit.active()?.geometry;if(g){bridge.checkpoint();sculptMasks.delete(g);showSculptMask(edit.active());}editStatus("Sculpt mask cleared.");};
 function advancedStroke(mode,delta,radius,strength,e){
  const mesh=edit.active(),g=mesh?.geometry,a=g?.attributes.position;
  if(!a||mesh!==gesture.mesh||a.count>150000||g.morphAttributes.position?.length||mesh.isSkinnedMesh)return false;
@@ -268,7 +283,7 @@ function advancedStroke(mode,delta,radius,strength,e){
    a.setXYZ(i,a.getX(i)+move[0]*w*(1-mask[i]),a.getY(i)+move[1]*w*(1-mask[i]),a.getZ(i)+move[2]*w*(1-mask[i]));changed=true;
   }
  }
- if(changed){a.needsUpdate=true;g.computeVertexNormals();g.computeBoundingBox();g.computeBoundingSphere();}
+ if(changed){if(mode==="mask"||mode==="unmask"){sculptMasks.set(g,mask);showSculptMask(mesh);}a.needsUpdate=true;g.computeVertexNormals();g.computeBoundingBox();g.computeBoundingSphere();}
  return changed;
 }
 function applyStroke(e){
