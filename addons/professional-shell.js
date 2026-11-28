@@ -1,6 +1,21 @@
 /* Kumar Studio professional modeling shell: non-destructive UI layout.
    Existing rig, sculpt, import/export, blocking and reference handlers remain intact. */
 (()=>{'use strict';
+function showViewportFailure(event){
+ const message=String(event?.message||'').toLowerCase();
+ if(!/webgl|error creating .*context/.test(message))return;
+ const view=document.getElementById('view');
+ if(!view||document.getElementById('ksWebglError'))return;
+ const notice=document.createElement('div');
+ notice.id='ksWebglError';notice.setAttribute('role','alert');notice.setAttribute('aria-live','assertive');
+ notice.textContent='3D viewport unavailable: this browser could not start WebGL. Try a browser or device with WebGL enabled.';
+ notice.style.cssText='position:absolute;z-index:20;left:50%;top:50%;transform:translate(-50%,-50%);max-width:min(520px,calc(100% - 32px));padding:16px 20px;border:1px solid #80634c;border-radius:10px;background:#251f20;color:#ffe0be;text-align:center;font:14px/1.5 system-ui,sans-serif;box-shadow:0 8px 30px #0008;pointer-events:none';
+ view.append(notice);
+ const status=document.getElementById('status');
+ if(status){status.textContent='WebGL unavailable — the 3D viewport could not initialize in this browser.';status.setAttribute('role','alert');}
+}
+window.addEventListener('error',showViewportFailure);
+window.addEventListener('unhandledrejection',event=>showViewportFailure({message:event.reason?.message||event.reason}));
 if(document.getElementById('ksProShell'))return;
 const main=document.querySelector('body>main'),aside=main?.querySelector(':scope>aside'),view=document.getElementById('view');
 if(!main||!aside||!view)return;
