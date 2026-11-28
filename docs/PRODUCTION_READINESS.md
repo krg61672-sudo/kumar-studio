@@ -83,6 +83,12 @@ node tests/virtual-controls.cjs landscape
 
 The runner accepts alternative paths through `KUMAR_QA_DEPS`, `KUMAR_QA_ASSETS` and `KUMAR_QA_CHROMIUM`.
 
+## Workspace layout and Render & Capture QA — 2026-11-28
+
+**GREEN for automated Chromium desktop and responsive viewports:** phone 412×915, tablet 820×1180, landscape 915×412 and desktop 1480×1000. The browser test measured the Studio tool rail, viewport, properties inspector, primitive dock and timeline; all stayed within the viewport, with no panel overlap and no page-level horizontal overflow. Render & Capture mounted inside the properties inspector with static positioning in all four cases. Browser evidence: [responsive layout and capture QA run](https://github.com/krg61672-sudo/kumar-studio/actions/runs/46158763776), commit `4246a38`.
+
+The live cloud-browser screenshot shows the desktop panel arrangement, but that browser cannot initialize WebGL, so its 3D view and render panel are unavailable there. The relocation result above comes from the software-WebGL runner. Physical iPad Air 4 and Realme 11x testing remains open.
+
 ## Voxel Remesh QA — 2026-11-28
 
 **GREEN for the tested case:** Chromium 158.0.8127.0, desktop software-WebGL viewport, editable Three.js sphere at resolution 24. The browser workflow exercised the UI action on actual geometry and verified 7,926 vertices, 15,848 triangles, finite coordinates, no degenerate triangles, zero boundary edges and zero overused edges. Voxel Remesh Undo restored the source sphere topology; Redo restored the remeshed topology. The same desktop run passed Bevel, Loop Cut, Knife, quad retopology, Boolean Union, MakeHuman rig creation, weapon grip controls, motion playback and sequencer scrubbing.
