@@ -194,7 +194,36 @@ $('view').appendChild(renderer.domElement);
 
 const controls=new OrbitControls(camera,renderer.domElement);
 controls.target.set(0,.9,0);
-controls.enableDamping=true;
+controls.enableDamping=false;
+// Separate direct viewport navigation from mesh editing. Joystick cameraStep
+// operates on camera and target directly, independent of OrbitControls input.
+let orbitRequested=true;
+let joystickOnly=false;
+const orbitEnabledDescriptor=Object.getOwnPropertyDescriptor(controls,'enabled');
+if(!orbitEnabledDescriptor || orbitEnabledDescriptor.configurable){
+ Object.defineProperty(controls,'enabled',{configurable:true,enumerable:true,
+ get(){return orbitRequested&&!joystickOnly;},
+ set(value){orbitRequested=!!value;}});
+}
+function mountCameraInputMode(){
+ const panel=document.getElementById('refMeshEdit');
+ if(!panel||document.getElementById('ksJoystickCameraOnly'))return;
+ const label=document.createElement('label');
+ const toggle=document.createElement('input');
+ toggle.type='checkbox';toggle.id='ksJoystickCameraOnly';
+ label.append(toggle,document.createTextNode(' Joystick only camera (lock touch orbit)'));
+ panel.prepend(label);
+ toggle.addEventListener('change',()=>{
+  joystickOnly=toggle.checked;
+  controls.update();
+ });
+}
+renderer.domElement.style.touchAction='none';
+renderer.domElement.style.userSelect='none';
+renderer.domElement.style.webkitUserSelect='none';
+renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
+new MutationObserver(mountCameraInputMode).observe(document.body,{childList:true,subtree:true});
+mountCameraInputMode();
 controls.touches.TWO=THREE.TOUCH.DOLLY_PAN;
 
 scene.add(new THREE.HemisphereLight(0xffffff,0x687084,2));
