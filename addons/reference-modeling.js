@@ -224,7 +224,7 @@ const meshEdit=document.createElement('section');meshEdit.id='refMeshEdit';
 meshEdit.innerHTML=`<h4>Advanced Sculpt Mode</h4>
 <label><input id="refEditOn" type="checkbox"> Enable finger sculpt</label>
 <label>Brush action <select id="refBrushMode"><option value="grab">Grab / Stretch (drag any direction)</option><option value="inflate">Pull Out (raise surface)</option><option value="deflate">Push In (dent surface)</option><option value="smooth">Smooth</option><option value="flatten">Flatten</option><option value="pinch">Pinch</option><option value="crease">Crease</option><option value="clay">Clay</option><option value="draw">Draw</option><option value="scrape">Scrape</option><option value="fill">Fill</option><option value="snake">Snake Hook</option><option value="mask">Paint Mask</option><option value="unmask">Erase Mask</option></select></label>
-<label>Brush size <input id="refBrushRadius" type="range" min="1" max="100" value="38"></label>
+<label><input id="refBrushInvert" type="checkbox"> Invert brush (+/−)</label><label>Brush size <input id="refBrushRadius" type="range" min="1" max="100" value="38"></label>
 <label>Brush strength <input id="refBrushStrength" type="range" min="5" max="100" value="60"></label>
 <label><input id="refPressure" type="checkbox" checked> Pen pressure strength</label><button id="refMaskClear" type="button">Clear sculpt mask</button><label><input id="refMaskShow" type="checkbox" checked> Show mask</label><button id="refMaskInvert" type="button">Invert mask</button><label><input id="refAutoDetail" type="checkbox"> Auto detail refinement (experimental)</label><button id="refDetailUp" type="button">Subdivide mesh ×4</button><label>Falloff <select id="refFalloff"><option value="smooth">Smooth</option><option value="linear">Linear</option><option value="sharp">Sharp</option></select></label><label><input id="refMirror" type="checkbox"> Mirror X</label><label><input id="refMirrorY" type="checkbox"> Mirror Y</label><label><input id="refMirrorZ" type="checkbox"> Mirror Z</label>
 <p>Choose a shape, enable sculpt, then drag your finger anywhere on its surface. Grab stretches freely; Pull Out and Push In raise or indent the touched area. Switch off sculpt to orbit the camera.</p>
@@ -234,7 +234,21 @@ $('refExport').before(meshEdit);
 captureScaleBaseline();
 const edit=bridge.edit;let gesture=null;
 const canvas=edit.canvas,editStatus=msg=>$('refEditStatus').textContent=msg;
-function endGesture(){gesture=null;edit.setOrbit(true);}
+const brushCursor=document.createElement('div');
+brushCursor.style.cssText='position:fixed;display:none;border:1.5px solid #d9baff;border-radius:50%;pointer-events:none;z-index:999;box-shadow:0 0 2px #111;transform:translate(-50%,-50%)';
+document.body.append(brushCursor);
+function updateBrushCursor(e){
+ if(!$('refEditOn').checked||!edit.active()){brushCursor.style.display='none';return;}
+ const radius=Math.max(.008,Math.pow(Number($('refBrushRadius').value)/100,1.7)*.94);
+ const hit=edit.brushAt(e.clientX,e.clientY);
+ if(!hit){brushCursor.style.display='none';return;}
+ const d=edit.screenDeltaToLocal(1,0,hit.world);
+ const px=radius/Math.max(1e-6,Math.hypot(...d));
+ Object.assign(brushCursor.style,{display:'block',left:e.clientX+'px',top:e.clientY+'px',width:2*px+'px',height:2*px+'px'});
+}
+canvas.addEventListener('pointermove',updateBrushCursor,true);
+canvas.addEventListener('pointerleave',()=>brushCursor.style.display='none');
+function endGesture(){gesture=null;brushCursor.style.display='none';edit.setOrbit(true);}
 const sculptMasks={
  get(g){return g?.userData?.sculptMask;},
  has(g){return !!this.get(g);},
@@ -290,7 +304,8 @@ function applyStroke(e){
  if(!gesture||gesture.pointer!==e.pointerId)return;
  const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;
  if(Math.abs(dx)+Math.abs(dy)<.1)return;
- const mode=$('refBrushMode').value;
+ let mode=$('refBrushMode').value;
+ if($('refBrushInvert')?.checked){mode=({inflate:'deflate',deflate:'inflate',draw:'deflate',clay:'deflate',mask:'unmask',unmask:'mask',scrape:'fill',fill:'scrape'})[mode]||mode;}
  if(!['grab','snake'].includes(mode)){const hit=edit.brushAt(e.clientX,e.clientY);if(!hit){gesture.x=e.clientX;gesture.y=e.clientY;return;}gesture.center=hit.local;gesture.world=hit.world;gesture.normal=hit.normal;}
  const radius=Math.max(.008,Math.pow(Number($('refBrushRadius').value)/100,1.7)*.94);
  const strength=Number($('refBrushStrength').value)/100*1.8*($('refPressure').checked&&e.pointerType==='pen'?Math.max(.05,e.pressure):1);
