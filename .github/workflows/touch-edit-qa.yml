@@ -25,4 +25,8 @@ jobs:
       - name: Run touch editing and virtual controls in software WebGL
         env:
           KUMAR_QA_DEPS: /tmp/ks-deps
-        run: node tests/virtual-controls.cjs phone
+        run: |
+          for device in phone tablet landscape desktop; do
+            echo "Testing $device viewport"
+            node tests/virtual-controls.cjs "$device"
+          done
