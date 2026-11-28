@@ -794,7 +794,20 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     }
     if (!result.length) throw Error('Voxel Remesh found no enclosed surface.');
     if (mesh !== active() || original !== mesh.geometry) throw Error('The selected mesh changed.');
-    const geometry=writeMesh(result,{smooth:true,uv:false});
+    const weldStep=1e-5;
+    const clean=result.filter(face=>{
+      for (const corner of face) {
+        const p=corner.p;
+        p.set(Math.round(p.x/weldStep)*weldStep,Math.round(p.y/weldStep)*weldStep,
+          Math.round(p.z/weldStep)*weldStep);
+      }
+      const keys=face.map(({p})=>p.toArray().map(value=>Math.round(value/weldStep)).join(','));
+      if (new Set(keys).size!==3) return false;
+      const normal=face[1].p.clone().sub(face[0].p).cross(face[2].p.clone().sub(face[0].p));
+      return normal.lengthSq()>weldStep*weldStep*weldStep*weldStep;
+    });
+    if (!clean.length) throw Error('Voxel Remesh produced no stable surface triangles.');
+    const geometry=writeMesh(clean,{smooth:true,uv:false});
     replaceGeometry(mesh,geometry);
     return 'Voxel Remesh created '+(geometry.index.count/3).toLocaleString()+' triangles at resolution '+resolution+'. UVs are not preserved.';
   }
