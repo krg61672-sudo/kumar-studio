@@ -193,10 +193,6 @@ renderer.setAnimationLoop(()=>`),
   assert.deepEqual(flags.slice(2),[true,true,true]);
   for(const name of ['Ctrl','Shift','Alt'])await click(mouseButton(name+' modifier'));
   await look('vertex');
-  await pointAt(await project([-.15,.15,.175]));await click(mouseButton('Left mouse button'));
-  await click(mouseButton('Ctrl modifier'));
-  await pointAt(await project([.15,.15,.175]));await click(mouseButton('Left mouse button'));
-  await click(mouseButton('Ctrl modifier'));
   if(touch){
     await id('ksComponentDrag').uncheck();
     const viewport=await id('view').boundingBox();
@@ -208,6 +204,10 @@ renderer.setAnimationLoop(()=>`),
     await fingers('touchEnd',[]);
     assert.deepEqual(await camera(),before,'camera must remain fixed after the edit touch ends');
   }
+  await pointAt(await project([-.15,.15,.175]));await click(mouseButton('Left mouse button'));
+  await click(mouseButton('Ctrl modifier'));
+  await pointAt(await project([.15,.15,.175]));await click(mouseButton('Left mouse button'));
+  await click(mouseButton('Ctrl modifier'));
   await select('right','Editing joystick mode','move');
   await select('right','Joystick axis lock','x');
   const beforeEdit=await model();
