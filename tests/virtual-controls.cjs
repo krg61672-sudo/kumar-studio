@@ -124,6 +124,24 @@ renderer.setAnimationLoop(()=>`),
   },value);
   async function toggleSettings(){await click(id('ksVirtualLauncher'));}
   await id('ksVirtualLauncher').waitFor();
+  const layout=await page.evaluate(()=>{
+   const box=s=>{const e=document.querySelector(s);if(!e)return null;const r=e.getBoundingClientRect();
+    return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
+   const capture=document.getElementById('ks-render-tools');
+   return {width:innerWidth,documentWidth:document.documentElement.scrollWidth,
+    tools:box('#ksProTools'),view:box('#view'),inspector:box('#ksInspector'),dock:box('#ksPrimitiveDock'),
+    timeline:box('#ksProTimeline'),captureParent:capture?.parentElement?.closest('#ksInspector')?.id??null,
+    capturePosition:capture?getComputedStyle(capture).position:null};
+  });
+  assert.ok(layout.documentWidth<=layout.width+1,JSON.stringify(layout));
+  assert.ok(layout.tools.right<=layout.view.left+1,JSON.stringify(layout));
+  assert.ok(layout.view.right<=layout.inspector.left+1,JSON.stringify(layout));
+  assert.ok(layout.inspector.bottom<=layout.timeline.top+1,JSON.stringify(layout));
+  assert.ok(layout.dock.left>=layout.view.left-1&&layout.dock.right<=layout.view.right+1&&
+   layout.dock.bottom<=layout.view.bottom+1,JSON.stringify(layout));
+  assert.equal(layout.captureParent,'ksInspector',JSON.stringify(layout));
+  assert.equal(layout.capturePosition,'static',JSON.stringify(layout));
+  console.log(device||'desktop','workspace panels fit without overlap or page-level horizontal overflow; Render & Capture is in properties',JSON.stringify(layout));
   for(const k of ['mouse','left','right'])assert.equal(await panel(k).isVisible(),false);
   await toggleSettings();
   await field('left').check();
