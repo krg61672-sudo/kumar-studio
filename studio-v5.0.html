@@ -204,11 +204,11 @@ const root='https://raw.githubusercontent.com/makehumancommunity/makehuman/maste
 const api='https://api.github.com/repos/makehumancommunity/makehuman/contents/makehuman/data/targets/';
 
 const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x0c1220);
+scene.background=new THREE.Color(0x292b30);
 const camera=new THREE.PerspectiveCamera(40,1,.01,100);
 camera.position.set(0,1.15,3.6);
 
-const renderer=new THREE.WebGLRenderer({antialias:true});
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 $('view').appendChild(renderer.domElement);
 
@@ -260,8 +260,27 @@ const rim=new THREE.DirectionalLight(0xffffff,1.5);
 rim.position.set(0,3,-4);
 scene.add(rim);
 
-const grid=new THREE.GridHelper(10,20);
+let grid=new THREE.GridHelper(10,20,0x686b73,0x45484f);
 scene.add(grid);
+const viewportAxes=new THREE.AxesHelper(2);viewportAxes.visible=false;scene.add(viewportAxes);
+let transparentViewport=false;
+function viewportBackground(stage=false){
+ scene.background=transparentViewport?null:new THREE.Color(stage?0x84939e:0x292b30);
+ renderer.setClearAlpha(transparentViewport?0:1);
+}
+function mountViewportSettings(){
+ const aside=document.querySelector('main aside');if(!aside||document.getElementById('ksViewportSettings'))return;
+ const panel=document.createElement('details');panel.id='ksViewportSettings';
+ panel.innerHTML='<summary>Viewport & Grid</summary><label>Grid spacing <select id="ksGridSpacing"><option value="0.1">0.1</option><option value="0.25">0.25</option><option value="0.5" selected>0.5</option><option value="1">1</option></select> world units</label><label>Grid opacity <input id="ksGridOpacity" type="range" min="0" max="100" value="65"></label><label><input id="ksAxesVisible" type="checkbox"> XYZ axes</label><label><input id="ksTransparentViewport" type="checkbox"> Transparent background</label>';
+ aside.append(panel);
+ const opacity=()=>{grid.material.transparent=true;grid.material.opacity=Number($('ksGridOpacity').value)/100;grid.material.depthWrite=false;};
+ $('ksGridSpacing').onchange=()=>{const visible=grid.visible;scene.remove(grid);grid.geometry.dispose();grid.material.dispose();grid=new THREE.GridHelper(10,Math.round(10/Number($('ksGridSpacing').value)),0x686b73,0x45484f);grid.visible=visible;scene.add(grid);opacity();};
+ $('ksGridOpacity').oninput=opacity;
+ $('ksAxesVisible').onchange=e=>viewportAxes.visible=e.target.checked;
+ $('ksTransparentViewport').onchange=e=>{transparentViewport=e.target.checked;viewportBackground(false);};
+ opacity();
+}
+mountViewportSettings();
 
 const material=new THREE.MeshStandardMaterial({
 color:0xd9ad94,
@@ -3555,7 +3574,7 @@ key.castShadow=$("stageShadow").checked;
 key.shadow.radius=Number($("stageShadowSoft").value);
 const contrast=Number($("stageShadowContrast").value);
 fill.intensity=1.5*(1-contrast);
-scene.background.set(enabled?0x84939e:0x0c1220);
+viewportBackground(enabled);
 }
 for(const id of ["stageOn","stageGrid","stageCamera","stageLightMarker","stageLightOn","stageShadow","stageLightPower","stageShadowContrast","stageShadowSoft","stageLightX","stageLightY","stageLightZ"])$(id).addEventListener("input",updateStage);
 $("stageCameraFront").onclick=()=>$("front").click();
