@@ -753,7 +753,10 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     const result=[];
     const outward=new THREE.Vector3(), insideCenter=new THREE.Vector3(), outsideCenter=new THREE.Vector3();
     const addTriangle=(a,b,c,inside,outside)=>{
+      const key=p=>p.toArray().map(value=>Math.round(value*1e6)).join(',');
+      if (new Set([key(a),key(b),key(c)]).size!==3) return;
       const normal=b.clone().sub(a).cross(c.clone().sub(a));
+      if (normal.lengthSq() < step*step*step*step*1e-12) return;
       if (normal.dot(outward.copy(outside).sub(inside))<0) [b,c]=[c,b];
       result.push([{p:a},{p:b},{p:c}]);
     };
