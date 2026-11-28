@@ -297,56 +297,6 @@ export function fromSolid(solid, allowEmpty = false) {
   return faces;
 }
 
-export function bevelPlane(faces, adjacency, edge, width) {
-  const pair = adjacency.edges.get(edge.key);
-  if (pair?.length !== 2) throw Error('Bevel needs an edge shared by two faces.');
-  const [a, b] = pair.map(item => faceNormal(faces[item.f]));
-  const outward = a.clone().add(b).normalize();
-  if (a.dot(b) > .999 || outward.lengthSq() < epsilon) throw Error('Choose a corner edge.');
-  const origin = edge.a.p;
-  const support = outward.dot(origin);
-  if (faces.some(face => face.some(v => outward.dot(v.p) > support + epsilon))) {
-    throw Error('Bevel supports exposed convex edges.');
-  }
-  const halfAngle = Math.sqrt((1 - a.dot(b)) / 2);
-  const offset = support - width * halfAngle;
-  return { normal: outward.negate().toArray(), offset: -offset };
-}
-
-export function loopCut(faces, adjacency, start) {
-  const replacements = new Map(), visited = new Set();
-  const pending = [start.key];
-  let nextId = polygonId(faces);
-  while (pending.length) {
-    const key = pending.pop();
-    if (visited.has(key)) continue;
-    visited.add(key);
-    for (const side of adjacency.edges.get(key)) {
-      if (replacements.has(side.f)) continue;
-      const region = polygonRegion(faces, adjacency, side.f);
-      const boundary = boundaryEdges(adjacency, region);
-      if (boundary.length !== 4) throw Error('Loop Cut follows connected four-sided polygons.');
-      const loop = [boundary.find(edge => edge.key === key)];
-      if (!loop[0]) throw Error('Choose a polygon boundary edge.');
-      while (loop.length < 4) {
-        const next = boundary.find(edge => spatialKey(edge.a.p) === spatialKey(loop.at(-1).b.p));
-        if (!next || loop.includes(next)) throw Error('Loop Cut needs an ordered quad boundary.');
-        loop.push(next);
-      }
-      if (region.size !== 2) throw Error('Loop Cut needs quads built from two triangles.');
-      const [a, b, c, d] = loop.map(edge => edge.a);
-      const first = interpolate(a, b, .5), last = interpolate(c, d, .5);
-      for (const f of region) replacements.set(f, []);
-      replacements.set(side.f, [
-        ...markPolygon(triangulateFan([a, first, last, d]), nextId++),
-        ...markPolygon(triangulateFan([first, b, c, last]), nextId++)
-      ]);
-      pending.push(loop[2].key);
-    }
-  }
-  return faces.flatMap((face, i) => replacements.get(i) ?? [face]);
-}
-
 export function splitEdge(faces, adjacency, edge) {
   const sides = new Map(adjacency.edges.get(edge.key).map(side => [side.f, side]));
   return faces.flatMap((face, i) => {
@@ -357,4 +307,355 @@ export function splitEdge(faces, adjacency, edge) {
     const middle = interpolate(a, b, .5);
     return markPolygon([[a, middle, c], [middle, b, c]], face.polygon);
   });
+}
+
+function orderedBoundary(edges) {
+  const next = new Map(edges.map(edge => [spatialKey(edge.a.p), edge]));
+  const loop = [], seen = new Set();
+  let edge = edges[0];
+  while (edge && !seen.has(edge)) {
+    seen.add(edge);
+    loop.push(edge);
+    edge = next.get(spatialKey(edge.b.p));
+  }
+  return edge === loop[0] && loop.length === edges.length ? loop : [];
+}
+
+function quadRegions(faces, adjacency) {
+  const patches = new Map();
+  for (const index of faces.keys()) {
+    if (patches.has(index)) continue;
+    const region = polygonRegion(faces, adjacency, index);
+    const boundary = orderedBoundary(boundaryEdges(adjacency, region));
+    const quad = region.size === 2 && boundary.length === 4 ? {region, boundary} : null;
+    for (const face of region) patches.set(face, quad);
+  }
+
+  // A UV diagonal identifies the two halves of a curved grid quad even when
+  // the source import has no polygon IDs.
+  const candidates = new Map();
+  for (const pair of adjacency.edges.values()) {
+    if (pair.length !== 2) continue;
+    const [a, b] = pair;
+    if (patches.get(a.f) || patches.get(b.f) ||
+        faces[a.f].polygon != null || faces[b.f].polygon != null) continue;
+    const region = new Set([a.f, b.f]);
+    const boundary = orderedBoundary(boundaryEdges(adjacency, region));
+    if (boundary.length !== 4 || !boundary.every(({a,b}) => a.uv && b.uv)) continue;
+    if (Math.abs(a.a.uv.x - a.b.uv.x) < epsilon || Math.abs(a.a.uv.y - a.b.uv.y) < epsilon) continue;
+    if (!boundary.every(({a,b}) => Math.abs(a.uv.x-b.uv.x) < epsilon ||
+        Math.abs(a.uv.y-b.uv.y) < epsilon)) continue;
+    for (const side of pair) {
+      if (!candidates.has(side.f)) candidates.set(side.f, []);
+      candidates.get(side.f).push({region, boundary});
+    }
+  }
+  for (const [face, [quad, ...other]] of candidates) {
+    if (!other.length && [...quad.region].every(i => candidates.get(i)?.length === 1)) {
+      for (const i of quad.region) patches.set(i, quad);
+    }
+  }
+  // For untagged, untextured grids choose a diagonal only when both
+  // triangles independently prefer the same well-shaped quad.
+  const best = new Map();
+  for (const sides of adjacency.edges.values()) {
+    if (sides.length!==2) continue;
+    const [first,second] = sides;
+    if (sides.some(side=>patches.get(side.f) || faces[side.f].polygon!=null)) continue;
+    if (faceNormal(faces[first.f]).dot(faceNormal(faces[second.f]))<.5) continue;
+    const region=new Set(sides.map(side=>side.f));
+    const boundary=orderedBoundary(boundaryEdges(adjacency,region));
+    if (boundary.length!==4) continue;
+    const vectors=boundary.map(({a,b})=>b.p.clone().sub(a.p));
+    const lengths=vectors.map(v=>v.length());
+    const diagonal=first.a.p.distanceTo(first.b.p);
+    if (diagonal<Math.max(...lengths)*1.035) continue;
+    const axes=vectors.map(v=>v.normalize());
+    const score=-axes[0].dot(axes[2])-axes[1].dot(axes[3])-
+      .25*Math.abs(Math.log(lengths[0]/lengths[2]))-.25*Math.abs(Math.log(lengths[1]/lengths[3]));
+    if (score<1.3) continue;
+    const quad={region,boundary};
+    for (const {f} of sides) {
+      const old=best.get(f);
+      if (!old || score>old.score+1e-4) best.set(f,{score,quad});
+      else if (Math.abs(score-old.score)<=1e-4) best.set(f,{score,quad:null});
+    }
+  }
+  for (const {quad} of best.values()) {
+    if (quad && [...quad.region].every(f=>best.get(f)?.quad===quad)) {
+      for (const f of quad.region) patches.set(f,quad);
+    }
+  }
+  return patches;
+}
+
+function parameterOnEdge(reference, edge, t) {
+  return spatialKey(reference.a.p) === spatialKey(edge.a.p) ? t : 1 - t;
+}
+
+function polygonTriangles(corners, id) {
+  return markPolygon(triangulateFan(corners), id);
+}
+
+export function loopCut(faces, adjacency, start, count = 1, placement = .5, preview) {
+  if (!Number.isInteger(count) || count < 1 || count > 12 || !(placement > 0 && placement < 1)) {
+    throw Error('Choose 1–12 cuts and a placement between the edge endpoints.');
+  }
+  const quads = quadRegions(faces, adjacency);
+  const edgeCuts = new Map(), strips = new Map();
+  const pending = [{edge: start, fractions: Array.from({length: count}, (_, i) => {
+    const span = 2 * Math.min(placement, 1 - placement);
+    return placement + span * ((i + 1) / (count + 1) - .5);
+  })}];
+  while (pending.length) {
+    const cut = pending.pop(), {edge, fractions} = cut;
+    const existing = edgeCuts.get(edge.key);
+    if (existing) {
+      const expected = existing.fractions.map(t => parameterOnEdge(existing.edge, edge, t)).sort((a,b)=>a-b);
+      if (expected.some((t, i) => Math.abs(t - fractions[i]) > epsilon)) {
+        throw Error('This loop returns with reversed placement. Center the cut and try again.');
+      }
+      continue;
+    }
+    const sides = adjacency.edges.get(edge.key);
+    if (sides.length > 2) throw Error('Loop Cut reached a non-manifold edge.');
+    edgeCuts.set(edge.key, cut);
+    for (const side of sides) {
+      const quad = quads.get(side.f);
+      if (!quad) continue;
+      const index = quad.boundary.findIndex(item => item.key === edge.key);
+      if (index < 0) continue;
+      const loop = quad.boundary.slice(index).concat(quad.boundary.slice(0, index));
+      const values = fractions.map(t => parameterOnEdge(edge, loop[0], t)).sort((a,b)=>a-b);
+      const previous = strips.get(quad);
+      if (previous) {
+        if (previous.loop[0].key !== edge.key && previous.loop[2].key !== edge.key) {
+          throw Error('This loop crosses itself inside a quad.');
+        }
+        continue;
+      }
+      strips.set(quad, {loop, values});
+      pending.push({edge: loop[2], fractions: values.map(t=>1-t).reverse()});
+    }
+  }
+  if (!strips.size) throw Error('Choose an edge on a quad boundary.');
+
+  const replacements = new Map();
+  let id = polygonId(faces);
+  for (const [quad, {loop, values}] of strips) {
+    const [a,b,c,d] = loop.map(edge=>edge.a);
+    if (preview) for (const t of values) preview.push(interpolate(a,b,t).p,interpolate(d,c,t).p);
+    const segments = [0,...values,1], next = [];
+    for (let i=0; i<segments.length-1; i++) {
+      const from = segments[i], to = segments[i+1];
+      next.push(...polygonTriangles([
+        interpolate(a,b,from), interpolate(a,b,to), interpolate(d,c,to), interpolate(d,c,from)
+      ], id++));
+    }
+    for (const f of quad.region) replacements.set(f, []);
+    replacements.set(quad.region.values().next().value,next);
+  }
+  // At a triangle pole or n-gon, terminate the loop while splitting the same
+  // shared edge on both sides so there are no T-junctions.
+  const result = faces.flatMap((face,i)=>{
+    if (replacements.has(i)) return replacements.get(i);
+    const sides = adjacency.faceEdges[i];
+    if (!sides.some(edge=>edgeCuts.has(edge.key))) return [face];
+    const rim = sides.flatMap(edge=>{
+      const cut = edgeCuts.get(edge.key);
+      if (!cut) return [edge.a];
+      const values = cut.fractions.map(t=>parameterOnEdge(cut.edge,edge,t)).sort((a,b)=>a-b);
+      return [edge.a,...values.map(t=>interpolate(edge.a,edge.b,t))];
+    });
+    const center = averageCorners(face);
+    return rim.flatMap((corner,j)=>polygonTriangles([corner,rim[(j+1)%rim.length],center],id++));
+  });
+  if (result.length > 100000) throw Error('The cut would exceed 100,000 triangles.');
+  return result;
+}
+
+function averageCorners(corners) {
+  const p = new THREE.Vector3();
+  const uv = corners.every(v=>v.uv) ? new THREE.Vector2() : undefined;
+  for (const corner of corners) {
+    p.add(corner.p);
+    uv?.add(corner.uv);
+  }
+  return {p:p.divideScalar(corners.length),uv:uv?.divideScalar(corners.length)};
+}
+
+export function bevelEdge(faces, adjacency, edge, width, segments) {
+  const sides = adjacency.edges.get(edge.key);
+  if (sides.length !== 2) throw Error('Choose an edge shared by two faces.');
+  if (!(width > epsilon) || !Number.isInteger(segments) || segments < 1 || segments > 16) {
+    throw Error('Choose a positive bevel width and 1–16 segments.');
+  }
+  const [first, second] = sides;
+  if (spatialKey(first.a.p) !== spatialKey(second.b.p)) throw Error('The two faces must have consistent winding.');
+  const normals = sides.map(side=>faceNormal(faces[side.f]));
+  if (Math.abs(normals[0].dot(normals[1])) > .99999) throw Error('Choose an edge with a corner angle.');
+
+  const length = first.a.p.distanceTo(first.b.p);
+  const third = sides.map(({a,b,f})=>faces[f].find(v=>v!==a&&v!==b));
+  const edgeLine = new THREE.Line3(first.a.p,first.b.p);
+  const heights = third.map(v=>edgeLine.closestPointToPoint(v.p,false,new THREE.Vector3()).distanceTo(v.p));
+  if (width >= Math.min(...heights)*.9 || width >= length*.45) {
+    throw Error('Reduce the bevel width for this edge and its incident faces.');
+  }
+  const inset = sides.map(({a,b},i)=>{
+    const t = width / heights[i];
+    const end = Math.min(.24, width / length);
+    return [
+      interpolate(interpolate(a,b,end),third[i],t),
+      interpolate(interpolate(b,a,end),third[i],t)
+    ];
+  });
+
+  let id = polygonId(faces);
+  const rebuilt = sides.map(({a,b},i)=>{
+    const [p,q] = inset[i], c = third[i];
+    return markPolygon([[a,p,c],[p,q,c],[q,b,c]],id++);
+  });
+  const [a,b] = [first.a,first.b];
+  let [p,q] = inset[0];
+  const [rightQ,rightP] = inset[1];
+  const round = (u,v,t)=>{
+    const control = averageCorners([u,v]);
+    edgeLine.closestPointToPoint(control.p,false,control.p);
+    return interpolate(interpolate(u,control,t),interpolate(control,v,t),t);
+  };
+  const band = [];
+  for (let i=1;i<=segments;i++) {
+    const np = round(inset[0][0],rightP,i/segments);
+    const nq = round(inset[0][1],rightQ,i/segments);
+    band.push(...polygonTriangles([q,p,np,nq],id++),
+      ...polygonTriangles([a,np,p],id++),...polygonTriangles([b,q,nq],id++));
+    p=np;
+    q=nq;
+  }
+  return faces.flatMap((face,i)=>i===first.f ? [...rebuilt[0],...band] :
+    i===second.f ? rebuilt[1] : [face]);
+}
+
+function barycentric2(point,[a,b,c]) {
+  const u = b.clone().sub(a), v = c.clone().sub(a), p = point.clone().sub(a);
+  const det = u.cross(v);
+  if (Math.abs(det)<1e-8) return null;
+  const y = p.cross(v)/det, z = u.cross(p)/det;
+  return [1-y-z,y,z];
+}
+
+function embedPoint(triangle, weights) {
+  const p = new THREE.Vector3();
+  const uv = triangle.every(v=>v.uv) ? new THREE.Vector2() : undefined;
+  triangle.forEach((v,i)=>{
+    p.addScaledVector(v.p,weights[i]);
+    uv?.addScaledVector(v.uv,weights[i]);
+  });
+  return {p,uv};
+}
+
+function splitAtPoint(faces, corner) {
+  return faces.flatMap(face=>{
+    const [a,b,c] = face.map(v=>v.p);
+    const bary = THREE.Triangle.getBarycoord(corner.p,a,b,c,new THREE.Vector3());
+    if (!bary || Math.min(...bary.toArray()) < -epsilon ||
+        face.some(v=>v.p.distanceToSquared(corner.p)<epsilon**2)) return [face];
+    const zero = bary.toArray().findIndex(value=>value<epsilon);
+    if (zero>=0) {
+      const next = (zero+1)%3, last = (zero+2)%3;
+      return [[face[zero],face[next],corner],[face[zero],corner,face[last]]];
+    }
+    return [[face[0],face[1],corner],[face[1],face[2],corner],[face[2],face[0],corner]];
+  });
+}
+
+export function knifeStroke(source, points, project) {
+  let faces = source;
+  let id = polygonId(source), changed = false;
+  const cache = new Map();
+  const projected = corner => {
+    if (!cache.has(corner)) cache.set(corner,project(corner.p));
+    return cache.get(corner);
+  };
+  for (let i=1;i<points.length;i++) {
+    const start = points[i-1], end = points[i];
+    if (start.distanceToSquared(end)<1) continue;
+    const adjacency=topology(faces), shared=new Map();
+    const cuts=faces.map((face,f)=>{
+      const screen = face.map(projected);
+      if (screen.some(v=>v.w<=epsilon)) return null;
+      const xy = screen.map(v=>v.point);
+      const a = barycentric2(start,xy), b = barycentric2(end,xy);
+      if (!a || !b) return null;
+      let min = 0, max = 1;
+      for (let j=0;j<3;j++) {
+        const slope = b[j]-a[j];
+        if (Math.abs(slope)<1e-12) {
+          if (a[j]<-epsilon) return null;
+        } else if (slope>0) min = Math.max(min,-a[j]/slope);
+        else max = Math.min(max,-a[j]/slope);
+      }
+      if (max-min<1e-7) return null;
+      return [min,max].map(t=>{
+        const weights = a.map((v,j)=>Math.max(0,v+(b[j]-v)*t)/screen[j].w);
+        const sum = weights.reduce((x,y)=>x+y);
+        const normalized=weights.map(value=>value/sum);
+        const zero=normalized.findIndex(value=>value<epsilon);
+        if (zero<0) return embedPoint(face,normalized);
+        const j=(zero+1)%3,k=(zero+2)%3;
+        const amount=normalized[k]/(normalized[j]+normalized[k]);
+        const border=adjacency.faceEdges[f][j];
+        if (!shared.has(border.key)) shared.set(border.key,[]);
+        shared.get(border.key).push({border,amount});
+        return interpolate(border.a,border.b,amount);
+      });
+    });
+    faces=faces.flatMap((face,f)=>{
+      const borderPoints=adjacency.faceEdges[f].flatMap(edge=>(shared.get(edge.key)??[]).map(({border,amount})=>
+        interpolate(edge.a,edge.b,parameterOnEdge(border,edge,amount))));
+      let result=[face];
+      // Insert the stroke endpoints first, so the chord between them becomes
+      // an edge. Then stitch any other new points on the original boundary.
+      for (const point of [...(cuts[f]??[]),...borderPoints]) result=splitAtPoint(result,point);
+      if (result.length===1) return result;
+      changed=true;
+      return result.flatMap(triangle=>polygonTriangles(triangle,id++));
+    });
+    if (faces.length>100000) throw Error('The knife result exceeds 100,000 triangles.');
+  }
+  if (!changed) throw Error('Draw a knife stroke across the selected mesh.');
+  return faces;
+}
+
+export function quadRetopology(source, passes, snap) {
+  if (!Number.isInteger(passes) || passes<1 || passes>3) throw Error('Choose density level 1–3.');
+  let faces = source;
+  for (let pass=0;pass<passes;pass++) {
+    const adjacency = topology(faces), quads = quadRegions(faces,adjacency);
+    const visited = new Set(), edgePoints = new Map(), result = [];
+    let id = 1;
+    for (const f of faces.keys()) {
+      if (visited.has(f)) continue;
+      const quad = quads.get(f);
+      const rim = quad?.boundary ?? adjacency.faceEdges[f];
+      for (const i of quad?.region ?? [f]) visited.add(i);
+      const center = averageCorners(rim.map(edge=>edge.a));
+      snap?.(center.p);
+      const midpoint = rim.map(({key,a,b})=>{
+        const corner = interpolate(a,b,.5);
+        if (!edgePoints.has(key)) {
+          snap?.(corner.p);
+          edgePoints.set(key,corner.p);
+        }
+        return {...corner,p:edgePoints.get(key)};
+      });
+      for (const [i,{a}] of rim.entries()) {
+        result.push(...polygonTriangles([a,midpoint[i],center,midpoint[(i+rim.length-1)%rim.length]],id++));
+      }
+      if (result.length>100000) throw Error('Reduce retopology density for this mesh.');
+    }
+    faces = result;
+  }
+  return faces;
 }

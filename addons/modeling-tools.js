@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import {
-  readMesh, writeMesh, topology, polygonRegion, boundaryEdges, cutMesh, mirrorMesh,
-  regionOperation, mergeCorners, solidKernel, toSolid, fromSolid, bevelPlane, loopCut, splitEdge, duplicateMirror
+  readMesh, writeMesh, topology, polygonRegion, boundaryEdges, mirrorMesh,
+  regionOperation, mergeCorners, solidKernel, toSolid, fromSolid, bevelEdge, loopCut, splitEdge, duplicateMirror, knifeStroke, quadRetopology
 } from './mesh-topology.js';
 
 export function mountModelingTools({scene, camera, renderer, controls, bridge, group, saveHistory}) {
@@ -17,7 +17,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
       <option value="off">Orbit</option><option value="object">Object</option>
       <option value="vertex">Vertex</option><option value="edge">Edge</option>
       <option value="face">Triangle</option><option value="polygon">Polygon</option>
-      <option value="knife">Knife · two taps</option><option value="retopo">Retopology · surface points</option>
+      <option value="knife">Knife · draw or tap points</option><option value="retopo">Retopology · surface points</option>
     </select></label>
     <label>Gizmo <select id="ksGizmoMode">
       <option value="translate">Move</option><option value="rotate">Rotate</option><option value="scale">Scale</option>
@@ -27,6 +27,25 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     <label><input id="ksComponentAccumulate" type="checkbox"> Add vertices to selection</label>
     <label><input id="ksComponentDrag" type="checkbox"> Drag component in camera plane</label>
     <div id="ksComponentMoves"></div>
+    <details><summary>Bevel and Loop Cut settings</summary>
+      <label>Bevel width <input id="ksBevelWidth" type="number" value="0.02" min="0.0001" step="0.005"></label>
+      <label>Bevel segments <input id="ksBevelSegments" type="number" value="3" min="1" max="16" step="1"></label>
+      <label>Loop cut count <input id="ksLoopCount" type="number" value="1" min="1" max="12" step="1"></label>
+      <label>Loop placement <output id="ksLoopPlacementValue">50%</output>
+        <input id="ksLoopPlacement" type="range" value="50" min="1" max="99" step="1"></label>
+      <div data-actions="loops"></div>
+    </details>
+    <details id="ksKnifeTools"><summary>Knife</summary>
+      <label><input id="ksKnifeSnap" type="checkbox" checked> Snap to nearby vertices and edges</label>
+      <div data-actions="knife"></div>
+    </details>
+    <details id="ksRetopoTools"><summary>Retopology</summary>
+      <label>Quad density <select id="ksRetopoDensity">
+        <option value="1">Low</option><option value="2">Medium</option><option value="3">High</option>
+      </select></label>
+      <label><input id="ksRetopoSnap" type="checkbox" checked> Snap new quads to source surface</label>
+      <div data-actions="retopo"></div>
+    </details>
     <details open><summary>Components and topology</summary><div data-actions="components"></div></details>
     <details><summary>Objects and solids</summary>
       <label>Second mesh <select id="ksMeshOperand"></select></label>
@@ -56,7 +75,15 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
   gizmo.setSize(.65);
   gizmo.enabled = false;
 
-  let selection, interaction, pendingTap, knifeStart, retopoMesh;
+  const field = id => section.querySelector('#' + id);
+  const knifeOverlay = document.createElement('canvas');
+  knifeOverlay.hidden = true;
+  knifeOverlay.setAttribute('aria-hidden', 'true');
+  knifeOverlay.style.cssText = 'display:none;position:absolute;pointer-events:none;z-index:6';
+  canvas.parentElement.append(knifeOverlay);
+  let selection, interaction, pendingTap, knifeDrag, retopoMesh, lastLoop;
+  let knifePoints = [], knifeHover;
+  const surfaceTrees = new WeakMap();
   let retopoPoints = [];
   let busy = false;
   const ray = new THREE.Raycaster();
@@ -129,7 +156,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
 
   function resetSelection() {
     selection = undefined;
-    knifeStart = undefined;
+    clearKnife();
     retopoPoints = [];
     retopoMesh = undefined;
     drawSelection();
@@ -139,8 +166,14 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
 
   function updateViewport() {
     controls.enabled = true;
-    if (editing() && mode.value === 'retopo') report('Tap 3 or 4 points on the source mesh, then create a face.');
-    if (editing() && mode.value === 'knife') report('Tap two points to define a cut through the selected mesh.');
+    if (editing() && mode.value === 'retopo') {
+      field('ksRetopoTools').open = true;
+      report('Generate quads or tap 3–4 surface points to place a face.');
+    }
+    if (editing() && mode.value === 'knife') {
+      field('ksKnifeTools').open = true;
+      report('Drag or tap points on the viewport, then confirm the cut.');
+    }
     resetSelection();
   }
 
@@ -239,24 +272,6 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     }
     const mesh = active();
     if (!mesh?.visible) throw Error('Select a visible mesh first.');
-    if (mode.value === 'knife') {
-      if (!knifeStart) {
-        knifeStart = [x, y];
-        report('Tap the second point of the knife line.');
-        return;
-      }
-      const a = rayAt(...knifeStart).ray.direction.clone();
-      const b = rayAt(x, y).ray.direction.clone();
-      knifeStart = undefined;
-      const normal = a.cross(b).normalize();
-      if (!normal.lengthSq()) throw Error('Pick two different points.');
-      const inverse = mesh.matrixWorld.clone().invert();
-      const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, camera.position).applyMatrix4(inverse);
-      replaceGeometry(mesh, writeMesh(cutMesh(readMesh(mesh.geometry), plane.normal,
-        plane.coplanarPoint(new THREE.Vector3()))));
-      report('Knife cut applied.');
-      return;
-    }
     const hit = rayAt(x, y).intersectObject(mesh, false)[0];
     if (!hit) throw Error('Tap the selected mesh.');
     if (mode.value === 'retopo') {
@@ -285,6 +300,134 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     chooseComponent(mesh, hit);
   }
 
+  function projectToViewport(matrix, width, height, local) {
+    const clip = new THREE.Vector4(local.x, local.y, local.z, 1).applyMatrix4(matrix);
+    return {w:clip.w, point:new THREE.Vector2((clip.x/clip.w+1)*width/2,
+      (1-clip.y/clip.w)*height/2)};
+  }
+
+  function projection(mesh, rect) {
+    mesh.updateWorldMatrix(true, false);
+    camera.updateMatrixWorld(true);
+    const matrix = camera.projectionMatrix.clone().multiply(camera.matrixWorldInverse)
+      .multiply(mesh.matrixWorld);
+    return point => projectToViewport(matrix, rect.width, rect.height, point);
+  }
+
+  function knifePoint(x, y) {
+    const rect = canvas.getBoundingClientRect();
+    const point = new THREE.Vector2(x-rect.left,y-rect.top);
+    if (!field('ksKnifeSnap').checked) return point;
+    const mesh = active();
+    let hit;
+    for (const [dx,dy] of [[0,0],[-6,0],[6,0],[0,-6],[0,6]]) {
+      hit = rayAt(x+dx,y+dy).intersectObject(mesh,false)[0];
+      if (hit) break;
+    }
+    if (!hit) return point;
+    const project = projection(mesh,rect);
+    const attr = mesh.geometry.attributes.position;
+    const corners = [hit.face.a,hit.face.b,hit.face.c].map(i=>
+      project(new THREE.Vector3().fromBufferAttribute(attr,i)).point);
+    const vertex = corners.reduce((a,b)=>a.distanceToSquared(point)<b.distanceToSquared(point)?a:b);
+    if (vertex.distanceToSquared(point)<=81) return vertex;
+    let distance = 49, result = point;
+    for (let i=0;i<3;i++) {
+      const from = corners[i], edge = corners[(i+1)%3].clone().sub(from);
+      if (edge.lengthSq()<1e-8) continue;
+      const t = THREE.MathUtils.clamp(point.clone().sub(from).dot(edge)/edge.lengthSq(),0,1);
+      const nearest = from.clone().addScaledVector(edge,t);
+      const score = nearest.distanceToSquared(point);
+      if (score>=distance) continue;
+      distance=score;
+      result=nearest;
+    }
+    return result;
+  }
+
+  function drawKnife() {
+    const rect = canvas.getBoundingClientRect();
+    knifeOverlay.hidden = !knifePoints.length && !knifeHover;
+    knifeOverlay.style.display = knifeOverlay.hidden ? 'none' : 'block';
+    if (knifeOverlay.hidden) return;
+    knifeOverlay.width = Math.round(rect.width*devicePixelRatio);
+    knifeOverlay.height = Math.round(rect.height*devicePixelRatio);
+    Object.assign(knifeOverlay.style,{left:canvas.offsetLeft+'px',top:canvas.offsetTop+'px',
+      width:rect.width+'px',height:rect.height+'px'});
+    const ctx = knifeOverlay.getContext('2d');
+    ctx.scale(devicePixelRatio,devicePixelRatio);
+    ctx.strokeStyle = '#ffcc59';
+    ctx.fillStyle = '#ffcc59';
+    ctx.lineWidth = 2;
+    const points = knifeHover ? [...knifePoints,knifeHover] : knifePoints;
+    ctx.beginPath();
+    points.forEach((point,i)=>i ? ctx.lineTo(point.x,point.y) : ctx.moveTo(point.x,point.y));
+    ctx.stroke();
+    for (const point of knifePoints) {
+      ctx.beginPath();
+      ctx.arc(point.x,point.y,3,0,Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  function clearKnife() {
+    knifePoints = [];
+    knifeHover = undefined;
+    knifeDrag = undefined;
+    knifeOverlay.hidden = true;
+    knifeOverlay.style.display = 'none';
+  }
+
+  function knifeInput(event, minDistance) {
+    if (knifePoints.length>=64) {
+      report('The stroke has 64 points. Confirm it or cancel.');
+      return;
+    }
+    const point = knifePoint(event.clientX,event.clientY);
+    if (knifePoints.at(-1)?.distanceToSquared(point)<minDistance**2) return;
+    knifePoints.push(point);
+    knifeHover = undefined;
+    drawKnife();
+  }
+
+  canvas.addEventListener('pointerdown', event=>{
+    if (!editing() || mode.value!=='knife' || !active()?.visible || busy || !event.isPrimary || event.button!==0) return;
+    event.stopImmediatePropagation();
+    canvas.setPointerCapture(event.pointerId);
+    knifeDrag = {id:event.pointerId,start:knifePoints.length};
+    knifeInput(event,2);
+  },true);
+  canvas.addEventListener('pointermove',event=>{
+    if (!editing() || mode.value!=='knife' || !active()?.visible || busy || !event.isPrimary) return;
+    if (knifeDrag?.id===event.pointerId) {
+      event.stopImmediatePropagation();
+      knifeInput(event,14);
+    } else {
+      knifeHover = knifePoint(event.clientX,event.clientY);
+      drawKnife();
+    }
+  },true);
+  canvas.addEventListener('pointerup',event=>{
+    if (knifeDrag?.id!==event.pointerId) return;
+    event.stopImmediatePropagation();
+    knifeInput(event,4);
+    knifeDrag = undefined;
+    report(knifePoints.length+' knife points. Confirm the cut or cancel.');
+  },true);
+  canvas.addEventListener('pointercancel',event=>{
+    if (knifeDrag?.id!==event.pointerId) return;
+    knifePoints.length=knifeDrag.start;
+    knifeDrag=undefined;
+    knifeHover=undefined;
+    drawKnife();
+  },true);
+  canvas.addEventListener('pointerleave',()=>{
+    if (knifeDrag || !knifeHover) return;
+    knifeHover=undefined;
+    drawKnife();
+  });
+  window.addEventListener('resize',clearKnife);
+
   // A tap picks components. A drag on a gizmo is handled by TransformControls.
   canvas.addEventListener('pointerdown', event => {
     if (!event.isPrimary) {
@@ -292,7 +435,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
       if (interaction) event.stopImmediatePropagation();
       return;
     }
-    if (!editing() || busy || mode.value === 'off' || event.button !== 0) return;
+    if (!editing() || busy || ['off','knife'].includes(mode.value) || event.button !== 0) return;
     if (gizmo.enabled) {
       const rect = canvas.getBoundingClientRect();
       gizmo.pointerHover({x: (event.clientX - rect.left) / rect.width * 2 - 1,
@@ -441,7 +584,6 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     const original = mesh.geometry;
     const faces = readMesh(original);
     const other = ['union', 'difference', 'intersection'].includes(kind) ? secondMesh() : null;
-    const edge = kind === 'bevel' ? selectedEdge() : null;
     const value = other ? 0 : amount();
     const kernel = await solidKernel();
     if (mesh !== active() || original !== mesh.geometry || (other && !group.children.includes(other))) {
@@ -458,9 +600,6 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
         const relative = mesh.matrixWorld.clone().invert().multiply(other.matrixWorld);
         const b = keep(toSolid(kernel, readMesh(other.geometry, relative), !!original.attributes.uv));
         result = keep(kernel.Manifold[kind](a, b));
-      } else if (edge) {
-        const plane = bevelPlane(faces, edge.adjacency, edge.edges[0], value);
-        result = keep(a.trimByPlane(plane.normal, plane.offset));
       } else {
         const simplified = keep(a.simplify(value * .05));
         const bounds = original.boundingBox || new THREE.Box3().setFromBufferAttribute(original.attributes.position);
@@ -487,6 +626,77 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     }
   }
 
+  async function surfaceTree(mesh) {
+    const source = mesh.geometry;
+    const version = source.attributes.position.version;
+    const {MeshBVH} = await import('three-mesh-bvh');
+    let cached = surfaceTrees.get(source);
+    if (cached?.version === version) return cached.tree;
+    const tree = new MeshBVH(source,{indirect:true});
+    surfaceTrees.set(source,{version,tree});
+    return tree;
+  }
+
+  function bindRetopology(source, target) {
+    source.userData.topologyReference ??= THREE.MathUtils.generateUUID();
+    target.userData.retopologySource = source.userData.topologyReference;
+  }
+
+  async function automaticRetopology() {
+    const source = active(), original = source.geometry;
+    const snap = field('ksRetopoSnap').checked;
+    const tree = snap ? await surfaceTree(source) : undefined;
+    if (active()!==source || source.geometry!==original) throw Error('The source mesh changed.');
+    const faces = quadRetopology(readMesh(original),Number(field('ksRetopoDensity').value),
+      tree && (point=>{
+        const nearest = tree.closestPointToPoint(point);
+        if (nearest) point.copy(nearest.point);
+      }));
+    const geometry = writeMesh(faces,{smooth:true});
+    const part = source.clone(false);
+    part.geometry = geometry;
+    part.material = new THREE.MeshStandardMaterial({color:0xe6ad65,side:THREE.DoubleSide,wireframe:true});
+    part.userData = {};
+    part.name = (source.name || 'Mesh')+' quad retopology';
+    saveHistory();
+    bindRetopology(source,part);
+    group.add(part);
+    bridge.select(group.children.indexOf(part));
+    mode.value='polygon';
+    updateViewport();
+    document.dispatchEvent(new Event('ks-modeling-geometry'));
+    return new Set(geometry.userData.polygons).size+' editable quads created.';
+  }
+
+  async function snapRetopology() {
+    const mesh = active(), original = mesh.geometry;
+    const source = group.children.find(item=>item!==mesh && item.userData.topologyReference &&
+      item.userData.topologyReference===mesh.userData.retopologySource);
+    if (!source) throw Error('Select retopology with its source mesh still in the scene.');
+    const tree = await surfaceTree(source);
+    if (active()!==mesh || mesh.geometry!==original) throw Error('The retopology mesh changed.');
+    mesh.updateWorldMatrix(true,false);
+    source.updateWorldMatrix(true,false);
+    const intoSource = source.matrixWorld.clone().invert().multiply(mesh.matrixWorld);
+    const intoMesh = intoSource.clone().invert();
+    const next = original.clone(), positions = next.attributes.position;
+    const selected = current();
+    const keys = selected && new Set(selected.corners.map(v=>v.p.toArray().join(',')));
+    const point = new THREE.Vector3();
+    for (let i=0;i<positions.count;i++) {
+      point.fromBufferAttribute(positions,i);
+      if (keys && !keys.has(point.toArray().join(','))) continue;
+      const nearest = tree.closestPointToPoint(point.applyMatrix4(intoSource));
+      if (!nearest) continue;
+      point.copy(nearest.point).applyMatrix4(intoMesh);
+      positions.setXYZ(i,point.x,point.y,point.z);
+    }
+    next.computeVertexNormals();
+    next.computeBoundingBox();
+    next.computeBoundingSphere();
+    replaceGeometry(mesh,next);
+  }
+
   function addRetopoFace() {
     const mesh = active();
     if (mode.value !== 'retopo' || retopoPoints.length < 3) throw Error('Tap 3 or 4 source surface points first.');
@@ -509,6 +719,7 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     part.geometry = geometry;
     if (!existing) {
       part.name = (mesh.name || 'Mesh') + ' retopology';
+      bindRetopology(mesh,part);
       group.add(part);
     }
     retopoMesh = part;
@@ -589,15 +800,74 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
         kind === 'inset' ? Math.min(.95, amount()) : amount())));
     });
   }
-  makeButton(componentActions, 'Loop Cut', () => {
-    const {mesh, faces, adjacency, edges} = selectedEdge();
-    replaceGeometry(mesh, writeMesh(loopCut(faces, adjacency, edges[0])));
+  function loopOperation(previous) {
+    const data = previous ? lastLoop : selectedEdge();
+    if (!data || data.mesh!==active() || (previous &&
+        (data.result!==data.mesh.geometry || data.version!==data.result.attributes.position.version))) {
+      throw Error('The last loop is no longer on the active mesh.');
+    }
+    const {mesh,faces,adjacency,edges} = data;
+    const result = writeMesh(loopCut(faces,adjacency,edges[0],Number(field('ksLoopCount').value),
+      Number(field('ksLoopPlacement').value)/100));
+    replaceGeometry(mesh,result);
+    lastLoop = {mesh,faces,adjacency,edges,result,version:result.attributes.position.version};
+  }
+  let loopPreviewFrame;
+  function previewLoop() {
+    field('ksLoopPlacementValue').textContent = field('ksLoopPlacement').value+'%';
+    cancelAnimationFrame(loopPreviewFrame);
+    loopPreviewFrame=requestAnimationFrame(()=>{
+      drawSelection();
+      if (!editing()) return;
+      const selected=current();
+      const data=mode.value==='edge' && selected ? selected :
+        lastLoop?.mesh===active() && lastLoop.result===active()?.geometry ? lastLoop : undefined;
+      if (!data || !data.edges.length) return;
+      const preview=[];
+      try {
+        loopCut(data.faces,data.adjacency,data.edges[0],Number(field('ksLoopCount').value),
+          Number(field('ksLoopPlacement').value)/100,preview);
+        const line=new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(
+          preview.map(p=>data.mesh.localToWorld(p))),outlineMaterial);
+        line.renderOrder=42;
+        markers.add(line);
+      } catch (error) { report(error.message); }
+    });
+  }
+  field('ksLoopPlacement').addEventListener('input',previewLoop);
+  field('ksLoopCount').addEventListener('input',previewLoop);
+  makeButton(componentActions,'Loop Cut',()=>loopOperation(false));
+  makeButton(section.querySelector('[data-actions="loops"]'),'Slide last loop',()=>loopOperation(true));
+
+  const knifeActions = section.querySelector('[data-actions="knife"]');
+  const confirmKnife = makeButton(knifeActions,'Confirm knife cut',()=>{
+    const mesh = active();
+    if (mode.value!=='knife' || knifePoints.length<2) throw Error('Draw or tap at least two knife points.');
+    const result = knifeStroke(readMesh(mesh.geometry),knifePoints,projection(mesh,canvas.getBoundingClientRect()));
+    replaceGeometry(mesh,writeMesh(result));
+  });
+  const cancelKnife = makeButton(knifeActions,'Cancel knife stroke',()=>{
+    clearKnife();
+    return 'Knife stroke cancelled.';
+  });
+  document.addEventListener('keydown',event=>{
+    if (!editing() || mode.value!=='knife' || !knifePoints.length) return;
+    if (event.key==='Escape') cancelKnife.click();
+    else if (event.key==='Enter' &&
+        !event.target.matches?.('input,select,button,textarea,[contenteditable]')) confirmKnife.click();
+    else return;
+    event.preventDefault();
   });
   makeButton(componentActions, 'Split edge at midpoint', () => {
     const {mesh, faces, adjacency, edges} = selectedEdge();
     replaceGeometry(mesh, writeMesh(splitEdge(faces, adjacency, edges[0])));
   });
-  makeButton(componentActions, 'Bevel edge', () => solidAction('bevel'));
+  makeButton(componentActions,'Bevel edge',()=>{
+    const {mesh,faces,adjacency,edges}=selectedEdge();
+    const result=bevelEdge(faces,adjacency,edges[0],Number(field('ksBevelWidth').value),
+      Number(field('ksBevelSegments').value));
+    replaceGeometry(mesh,writeMesh(result));
+  });
   makeButton(componentActions, 'Merge at center', () => {
     const selected = current();
     if (!selected) throw Error('Choose a component first.');
@@ -636,8 +906,11 @@ export function mountModelingTools({scene, camera, renderer, controls, bridge, g
     if (!bridge.edit.subdivideTriangles()) throw Error('Choose a mesh under 25,000 triangles.');
     resetSelection();
   });
-  makeButton(componentActions, 'Create retopology face', addRetopoFace);
-  makeButton(componentActions, 'Clear surface points', () => {
+  const retopoActions = section.querySelector('[data-actions="retopo"]');
+  makeButton(retopoActions,'Generate quad retopology',automaticRetopology);
+  makeButton(retopoActions,'Snap retopology to source',snapRetopology);
+  makeButton(retopoActions, 'Create retopology face', addRetopoFace);
+  makeButton(retopoActions, 'Clear surface points', () => {
     retopoPoints = [];
     drawSelection();
   });
